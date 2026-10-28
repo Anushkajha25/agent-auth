@@ -1,4 +1,4 @@
-# Agent AuthZ — Week 1 thin slice
+# Agent Auth
 
 Context-aware authorization for LLM agent tool calls. Every tool call goes through an
 interceptor, which asks a policy decision point (PDP) to allow or deny it. The decision can
