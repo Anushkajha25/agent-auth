@@ -1,0 +1,7 @@
+{
+  "roles": {
+    "finance_assistant": ["fetch_url", "search_web", "read_email", "read_customer_db", "send_email", "transfer_funds"],
+    "support_assistant": ["search_web", "read_email", "read_customer_db", "send_email", "update_record"],
+    "ops_assistant":     ["search_web", "read_email", "read_customer_db", "update_record", "delete_file"]
+  }
+}

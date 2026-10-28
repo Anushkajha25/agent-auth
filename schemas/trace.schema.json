@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trace.schema.json",
+  "title": "Labeled replay trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "label", "principal", "steps"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "description": {"type": "string"},
+    "label": {"enum": ["benign", "adversarial"]},
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role"],
+      "properties": {"role": {"type": "string", "minLength": 1}}
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "args", "should_allow"],
+        "properties": {
+          "tool": {"type": "string", "minLength": 1},
+          "args": {"type": "object"},
+          "should_allow": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "input.schema.json",
+  "title": "PDP policy input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["session_id", "principal", "action", "history"],
+  "properties": {
+    "session_id": {"type": "string", "minLength": 1},
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role"],
+      "properties": {"role": {"type": "string", "minLength": 1}}
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "tool", "tier", "args"],
+      "properties": {
+        "step": {"type": "integer", "minimum": 1},
+        "tool": {"type": "string", "minLength": 1},
+        "tier": {"enum": ["read_public", "read_sensitive", "write", "irreversible"]},
+        "args": {"type": "object"}
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "tool", "tier", "output_trust", "decision"],
+        "properties": {
+          "step": {"type": "integer", "minimum": 1},
+          "tool": {"type": "string", "minLength": 1},
+          "tier": {"enum": ["read_public", "read_sensitive", "write", "irreversible", null]},
+          "output_trust": {"enum": ["trusted", "untrusted", null]},
+          "decision": {"enum": ["allow", "deny"]}
+        }
+      }
+    }
+  }
+}

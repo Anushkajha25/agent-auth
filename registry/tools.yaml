@@ -1,0 +1,10 @@
+# Single source of truth for tool labels. No LLM ever assigns a label.
+tools:
+  fetch_url:        {tier: read_public,    output_trust: untrusted, args: [url]}
+  search_web:       {tier: read_public,    output_trust: untrusted, args: [query]}
+  read_email:       {tier: read_sensitive, output_trust: untrusted, args: [folder]}
+  read_customer_db: {tier: read_sensitive, output_trust: trusted,   args: [customer_id]}
+  send_email:       {tier: write,          output_trust: trusted,   args: [to, body]}
+  update_record:    {tier: write,          output_trust: trusted,   args: [record_id, fields]}
+  transfer_funds:   {tier: irreversible,   output_trust: trusted,   args: [to_account, amount]}
+  delete_file:      {tier: irreversible,   output_trust: trusted,   args: [path]}
