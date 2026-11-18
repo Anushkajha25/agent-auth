@@ -9,7 +9,8 @@ Conversations use one neutral message format, converted per provider:
 Tools are {"name", "description", "parameters"} with a JSON Schema for parameters.
 
 Both clients talk to the provider's HTTP API with `requests`, so there is no SDK dependency.
-API keys come from OPENAI_API_KEY / ANTHROPIC_API_KEY and are never logged.
+API keys come from OPENAI_API_KEY / ANTHROPIC_API_KEY and are never logged. The "ollama"
+provider runs a local model for free through Ollama's OpenAI-compatible API and needs no key.
 """
 
 from __future__ import annotations
@@ -81,7 +82,9 @@ class _HTTPClient:
                 resp = self.session.post(url, headers=headers, json=body, timeout=self.timeout)
             except requests.RequestException as e:
                 if attempt == self.max_retries:
-                    raise LLMError(f"{self.provider} request failed: {e}") from e
+                    hint = " (is Ollama running? start the Ollama app or run `ollama serve`)" \
+                        if self.provider == "ollama" else ""
+                    raise LLMError(f"{self.provider} request failed: {e}{hint}") from e
             else:
                 ms = (time.perf_counter() - t0) * 1000
                 if resp.status_code == 200:
@@ -194,13 +197,21 @@ class AnthropicClient(_HTTPClient):
         return LLMResponse(text, calls, tin, tout, ms)
 
 
-PROVIDERS = {"openai": (OpenAIClient, "OPENAI_API_KEY"), "anthropic": (AnthropicClient, "ANTHROPIC_API_KEY")}
+PROVIDERS = {"openai": (OpenAIClient, "OPENAI_API_KEY"), "anthropic": (AnthropicClient, "ANTHROPIC_API_KEY"),
+             "ollama": (OpenAIClient, None)}
+
+# Ollama runs models locally for free and serves an OpenAI-compatible API; no key needed.
+DEFAULT_OLLAMA_URL = "http://localhost:11434/v1"
 
 
 def make_client(provider: str, model: str, *, seed: int | None = None, **kwargs) -> LLMClient:
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider {provider!r}; choose from {', '.join(PROVIDERS)}")
     cls, env = PROVIDERS[provider]
+    if provider == "ollama":
+        kwargs.setdefault("base_url", os.environ.get("OLLAMA_URL", DEFAULT_OLLAMA_URL))
+        kwargs.setdefault("timeout", 600.0)  # local models on a laptop can take a while per call
+        return OpenAIClient(model=model, api_key="ollama", provider="ollama", seed=seed, **kwargs)
     key = os.environ.get(env)
     if not key:
         raise SystemExit(f"set {env} to use provider {provider!r}")

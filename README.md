@@ -47,25 +47,30 @@ docker compose run --rm opa test /policies -v
 
 ## Live agent and system experiments (E1, E4, E5)
 
-E1 needs only OPA. E4 and E5 call an LLM API, so set a key first; it is read from the
-environment and never written to logs:
+E1 needs only OPA. E4 and E5 need an LLM. The free option is a local model through
+[Ollama](https://ollama.com), which needs no account or API key:
 
 ```bash
-export OPENAI_API_KEY=...        # for --provider openai
-export ANTHROPIC_API_KEY=...     # for --provider anthropic
+brew install ollama            # or download the app from ollama.com
+ollama serve                   # leave running (the Ollama app does this for you)
+ollama pull qwen2.5:7b         # ~4.7 GB; any model with tool calling works (qwen2.5:3b for 8 GB Macs)
 ```
 
+Set `OLLAMA_URL` if Ollama isn't on `http://localhost:11434/v1`. Hosted APIs also work with
+`--provider openai` or `--provider anthropic` and `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`;
+keys are read from the environment and never logged.
+
 ```bash
-# E1: enforcement latency for L0-L4 across history lengths (no API key needed)
+# E1: enforcement latency for L0-L4 across history lengths (no LLM needed)
 .venv/bin/python -m authz.eval.latency --out results/e1
 
 # E4: Rego L4 vs. an LLM judge on the same traces, each input asked 5 times
 #     (about 144 x 5 judge calls; try --limit 5 first)
-.venv/bin/python -m authz.eval.judge_compare --provider openai --model gpt-4o-mini --runs 5 --out results/e4
+.venv/bin/python -m authz.eval.judge_compare --provider ollama --model qwen2.5:7b --runs 5 --out results/e4
 
 # E5: live agent on scenarios/live under each condition, 3 seeds
 #     (add 'judge' to --conditions for the LLM judge; --only l01_refund_known_customer to try one task)
-.venv/bin/python -m authz.eval.live --provider openai --model gpt-4o-mini --conditions L0,L1,L3,L4 --seeds 3 --out results/e5
+.venv/bin/python -m authz.eval.live --provider ollama --model qwen2.5:7b --conditions L0,L1,L3,L4 --seeds 3 --out results/e5
 ```
 
 The agent (`src/authz/agent/`) is a minimal function-calling loop. Every tool call goes
@@ -112,7 +117,7 @@ See `docs/rule-semantics.md` for how rules are evaluated and why decisions are d
 | `src/authz/tools/executor.py` | `ToolExecutor` interface and `MockToolExecutor`: runs the mock tools, records every executed call per session, and can override tool outputs per task. |
 | `src/authz/pdp/` | `NoOpPDP`, `OpaPDP`, and `make_pdp` |
 | `src/authz/eval/` | `replay`, `metrics`, `determinism`, `experiments` (E2/E3), `latency` (E1), `judge_compare` (E4), `live` (E5), `task_success` |
-| `src/authz/agent/` | `llm` (OpenAI and Anthropic clients over HTTP), `loop` (the tool-calling agent) |
+| `src/authz/agent/` | `llm` (Ollama, OpenAI and Anthropic clients over HTTP), `loop` (the tool-calling agent) |
 | `src/authz/pdp/llm_judge.py` | Baseline 3: LLM judge as the PDP, given the same context as the Rego policies |
 | `scenarios/live/` | 13 live tasks for E5 (6 benign, 7 attacks) |
 | `docs/` | `rule-semantics.md`, E2/E3 figures |

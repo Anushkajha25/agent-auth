@@ -25,7 +25,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from authz import POLICIES_DIR
-from authz.agent.llm import LLMClient, make_client
+from authz.agent.llm import PROVIDERS, LLMClient, make_client
 from authz.agent.loop import AgentConfig, run_agent, tool_specs
 from authz.eval.replay import check_opa_policies, new_run_id
 from authz.eval.task_success import evaluate, load_tasks
@@ -175,10 +175,10 @@ def plot(summary: dict, path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--provider", required=True, choices=["openai", "anthropic"])
+    ap.add_argument("--provider", required=True, choices=list(PROVIDERS))
     ap.add_argument("--model", required=True, help="exact model ID for the agent, e.g. gpt-4o-mini")
     ap.add_argument("--conditions", default="L0,L1,L3,L4", help="levels and/or 'judge', comma-separated")
-    ap.add_argument("--judge-provider", default=None, help="default: same as --provider")
+    ap.add_argument("--judge-provider", default=None, choices=list(PROVIDERS), help="default: same as --provider")
     ap.add_argument("--judge-model", default=None, help="default: same as --model")
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--tasks", default="scenarios/live")

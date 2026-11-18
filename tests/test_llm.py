@@ -111,3 +111,19 @@ def test_make_client_needs_key(monkeypatch):
     assert c.seed == 3 and c.model == "m"
     with pytest.raises(ValueError):
         llm.make_client("other", "m")
+
+
+def test_ollama_needs_no_key(monkeypatch):
+    for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OLLAMA_URL"):
+        monkeypatch.delenv(k, raising=False)
+    c = llm.make_client("ollama", "qwen2.5:7b", seed=2)
+    assert (c.provider, c.base_url, c.seed, c.timeout) == ("ollama", "http://localhost:11434/v1", 2, 600.0)
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:9999/v1")
+    assert llm.make_client("ollama", "m").base_url == "http://127.0.0.1:9999/v1"
+
+
+def test_ollama_down_gives_hint(monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    c = llm.make_client("ollama", "m", session=FakeSession([requests.ConnectionError("refused")] * 5))
+    with pytest.raises(LLMError, match="ollama serve"):
+        c.complete("sys", [{"role": "user", "content": "q"}])

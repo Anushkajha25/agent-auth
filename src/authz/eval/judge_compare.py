@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from authz import POLICIES_DIR
+from authz.agent.llm import PROVIDERS
 from authz.eval.metrics import percentile
 from authz.eval.replay import check_opa_policies, load_traces, new_run_id
 from authz.hashing import policy_sha256
@@ -153,7 +154,7 @@ def results_md(summary: dict, run_id: str, judge_model: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--provider", required=True, choices=["openai", "anthropic"])
+    ap.add_argument("--provider", required=True, choices=list(PROVIDERS))
     ap.add_argument("--model", required=True, help="exact model ID, e.g. gpt-4o-mini")
     ap.add_argument("--runs", type=int, default=5, help="times each input is asked (default 5)")
     ap.add_argument("--compare", default="L4", help="Rego level to compare against (default L4)")
