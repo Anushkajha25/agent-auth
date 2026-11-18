@@ -1,6 +1,6 @@
 """Replay labeled traces through the interceptor under one or more PDP backends.
 
-    python -m authz.eval.replay --pdp noop|static|context|all --traces scenarios/custom --out results/
+    python -m authz.eval.replay --pdp all --traces scenarios/custom --out results/ [--window N]
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from authz.hashing import policy_sha256
 from authz.history import SessionHistory
 from authz.interceptor import Interceptor
 from authz.log import DecisionLogger, read_log
-from authz.pdp import BACKENDS, make_pdp, opa_url as resolve_opa_url
+from authz.pdp import BACKENDS, LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.opa_sync import PolicyMismatch, verify_opa_policies
 from authz.registry import Registry
 
@@ -56,7 +56,10 @@ def new_run_id() -> str:
 
 
 def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
-        opa_url: str | None = None, validate_input: bool = False) -> tuple[Path, dict]:
+        opa_url: str | None = None, validate_input: bool = False,
+        window: int | None = None) -> tuple[Path, dict]:
+    pdps = [LEVELS.get(p, p) for p in pdps]
+    params = {"history_window": window} if window else None
     traces = load_traces(traces_dir)
     registry = Registry.load()
     run_id = new_run_id()
@@ -68,7 +71,8 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
     with DecisionLogger(run_dir / "decisions.jsonl", run_id, policy_hash) as logger:
         for pdp_name in pdps:
             pdp = make_pdp(pdp_name, opa_url)
-            interceptor = Interceptor(registry, pdp, logger, validate_input=validate_input)
+            interceptor = Interceptor(registry, pdp, logger, validate_input=validate_input,
+                                      params=params)
             for trace in traces:
                 history = SessionHistory(f"{pdp_name}-{trace['id']}", trace["principal"])
                 for step in trace["steps"]:
@@ -76,27 +80,32 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
                     interceptor.handle(history, step["tool"], step["args"],
                                        log_extra={"trace_id": trace["id"],
                                                   "label": trace["label"],
+                                                  "category": trace["category"],
                                                   "should_allow": step["should_allow"]})
         records = logger.records
 
     summary = metrics.compute(records)
     out = {"run_id": run_id, "policy_sha256": policy_hash, "traces": len(traces),
-           "pdps": summary}
+           "history_window": window, "pdps": summary}
     (run_dir / "summary.json").write_text(json.dumps(out, indent=2) + "\n")
     return run_dir, out
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pdp", choices=[*BACKENDS, "all"], default="all")
+    ap.add_argument("--pdp", choices=[*BACKENDS, *LEVELS, "all"], default="all")
     ap.add_argument("--traces", default="scenarios/custom")
     ap.add_argument("--out", default="results/")
     ap.add_argument("--opa-url", default=None, help="default: $OPA_URL or http://localhost:8181")
     ap.add_argument("--validate-input", action="store_true", help="validate each PDP input against the schema")
+    ap.add_argument("--window", type=int, default=None,
+                    help="only the last N history steps count for session rules (default: whole session)")
     args = ap.parse_args(argv)
 
     pdps = list(BACKENDS) if args.pdp == "all" else [args.pdp]
-    run_dir, out = run(pdps, args.traces, args.out, args.opa_url, args.validate_input)
+    if args.window is not None and args.window < 1:
+        ap.error("--window must be >= 1")
+    run_dir, out = run(pdps, args.traces, args.out, args.opa_url, args.validate_input, args.window)
 
     print(f"run_id: {out['run_id']}")
     print(f"policy_sha256: {out['policy_sha256']}")

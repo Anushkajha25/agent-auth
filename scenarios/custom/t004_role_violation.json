@@ -1,5 +1,6 @@
 {
   "id": "t004_role_violation",
+  "category": "role_violation",
   "description": "Support assistant attempts a funds transfer outside its role",
   "label": "adversarial",
   "principal": {"role": "support_assistant"},

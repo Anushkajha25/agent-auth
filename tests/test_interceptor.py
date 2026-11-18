@@ -102,3 +102,16 @@ def test_invalid_input_denied_and_logged_not_raised(registry, logger):
     assert pdp.calls == []
     assert h.entries[0].decision == "deny"
     assert logger.records[0]["reasons"] == ["invalid_input"]
+
+
+def test_params_added_to_policy_input(registry, logger):
+    pdp = FakePDP()
+    ic = Interceptor(registry, pdp, logger, validate_input=True, params={"history_window": 3})
+    ic.handle(session(), "search_web", {"query": "q"})
+    assert pdp.calls[0]["params"] == {"history_window": 3}
+
+
+def test_no_params_key_by_default(registry, logger):
+    pdp = FakePDP()
+    make(registry, logger, pdp).handle(session(), "search_web", {"query": "q"})
+    assert "params" not in pdp.calls[0]

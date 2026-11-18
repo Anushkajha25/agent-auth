@@ -1,4 +1,4 @@
-# Context-aware policy: static role check plus session-history rules.
+# L3: role check plus session taint.
 package authz.context
 
 import data.authz.lib
@@ -11,12 +11,9 @@ deny contains "role_not_permitted" if not lib.role_permits
 
 deny contains "missing_tier" if not input.action.tier
 
-# A denied untrusted read produced no content, so it does not taint the session.
 deny contains "irreversible_after_untrusted" if {
 	input.action.tier == "irreversible"
-	some h in input.history
-	h.output_trust == "untrusted"
-	h.decision == "allow"
+	lib.tainted
 }
 
 decision := {"allow": allow, "reasons": sort([r | some r in deny])}

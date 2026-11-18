@@ -44,11 +44,12 @@ def input_validator() -> jsonschema.protocols.Validator:
 
 class Interceptor:
     def __init__(self, registry: Registry, pdp: PDP, logger: DecisionLogger,
-                 validate_input: bool = False):
+                 validate_input: bool = False, params: dict | None = None):
         self.registry = registry
         self.pdp = pdp
         self.logger = logger
         self.validate_input = validate_input
+        self.params = dict(params) if params else None
 
     def handle(self, history: SessionHistory, tool_name: str, args: dict,
                log_extra: dict | None = None) -> Allowed | Denied:
@@ -63,6 +64,8 @@ class Interceptor:
             "action": {"step": step, "tool": tool_name, "tier": tier, "args": args},
             "history": history.as_policy_input(),
         }
+        if self.params:
+            input_doc["params"] = dict(self.params)
 
         latency_ms: float | None = None
         if spec is None or tool_name not in mock_tools.TOOLS:
