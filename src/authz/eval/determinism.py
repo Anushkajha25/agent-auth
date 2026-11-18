@@ -11,10 +11,11 @@ import sys
 from authz import POLICIES_DIR
 from authz.hashing import policy_sha256
 from authz.log import read_log
-from authz.pdp import make_pdp
+from authz.pdp import make_pdp, opa_url as resolve_opa_url
+from authz.pdp.opa_sync import PolicyMismatch, verify_opa_policies
 
 # These records never got a real PDP answer, so there is nothing to replay.
-NOT_PDP_DECISIONS = {"unknown_tool", "pdp_unavailable"}
+NOT_PDP_DECISIONS = {"unknown_tool", "pdp_unavailable", "invalid_input"}
 
 
 def check(log_path: str, runs: int, opa_url: str | None = None) -> tuple[int, int, list[str], int]:
@@ -32,6 +33,12 @@ def check(log_path: str, runs: int, opa_url: str | None = None) -> tuple[int, in
             f"  current policy_sha256: {current}\n"
             "Re-run replay to produce a log for the current policies."
         )
+
+    if any(r["pdp"] != "noop" for r in records):
+        try:
+            verify_opa_policies(resolve_opa_url(opa_url))
+        except PolicyMismatch as e:
+            raise SystemExit(f"ABORT: {e}")
 
     pdps: dict = {}
     diffs: list[str] = []

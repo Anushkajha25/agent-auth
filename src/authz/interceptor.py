@@ -67,9 +67,9 @@ class Interceptor:
         latency_ms: float | None = None
         if spec is None or tool_name not in mock_tools.TOOLS:
             decision = Decision(False, ("unknown_tool",))
+        elif self.validate_input and not input_validator().is_valid(input_doc):
+            decision = Decision(False, ("invalid_input",))
         else:
-            if self.validate_input:
-                input_validator().validate(input_doc)
             t0 = time.perf_counter_ns()
             try:
                 decision = self.pdp.decide(input_doc)

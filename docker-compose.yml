@@ -1,7 +1,7 @@
 services:
   opa:
     image: openpolicyagent/opa:1.21.4
-    command: ["run", "--server", "--addr", ":8181", "/policies"]
+    command: ["run", "--server", "--watch", "--addr", ":8181", "/policies"]
     volumes:
       - ./policies:/policies:ro
     ports:

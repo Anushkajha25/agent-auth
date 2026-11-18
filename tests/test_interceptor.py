@@ -92,3 +92,13 @@ def test_one_log_record_per_call_with_latency(registry, logger):
     assert ok["latency_ms"] >= 0 and ok["opa_eval_ns"] == 1234 and ok["pdp"] == "fake"
     assert unknown["latency_ms"] is None
     assert len(ok["input_sha256"]) == 64 and ok["policy_sha256"] == "deadbeef"
+
+
+def test_invalid_input_denied_and_logged_not_raised(registry, logger):
+    pdp = FakePDP()
+    h = session()
+    out = make(registry, logger, pdp).handle(h, "search_web", ["not", "an", "object"])
+    assert out == Denied(("invalid_input",))
+    assert pdp.calls == []
+    assert h.entries[0].decision == "deny"
+    assert logger.records[0]["reasons"] == ["invalid_input"]

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonschema
+import requests
 
 from authz import POLICIES_DIR, SCHEMAS_DIR
 from authz.eval import metrics
@@ -20,7 +21,8 @@ from authz.hashing import policy_sha256
 from authz.history import SessionHistory
 from authz.interceptor import Interceptor
 from authz.log import DecisionLogger, read_log
-from authz.pdp import BACKENDS, make_pdp
+from authz.pdp import BACKENDS, make_pdp, opa_url as resolve_opa_url
+from authz.pdp.opa_sync import PolicyMismatch, verify_opa_policies
 from authz.registry import Registry
 
 
@@ -40,6 +42,15 @@ def load_traces(traces_dir: str | Path) -> list[dict]:
     return traces
 
 
+def check_opa_policies(url: str) -> None:
+    try:
+        verify_opa_policies(url)
+    except PolicyMismatch as e:
+        raise SystemExit(f"ABORT: {e}")
+    except requests.RequestException:
+        print(f"WARNING: could not reach OPA at {url} to verify loaded policies", file=sys.stderr)
+
+
 def new_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(3)
 
@@ -51,6 +62,8 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
     run_id = new_run_id()
     run_dir = Path(out_dir) / run_id
     policy_hash = policy_sha256(POLICIES_DIR)
+    if any(p != "noop" for p in pdps):
+        check_opa_policies(resolve_opa_url(opa_url))
 
     with DecisionLogger(run_dir / "decisions.jsonl", run_id, policy_hash) as logger:
         for pdp_name in pdps:
