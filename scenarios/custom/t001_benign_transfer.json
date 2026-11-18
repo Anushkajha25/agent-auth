@@ -1,5 +1,6 @@
 {
   "id": "t001_benign_transfer",
+  "category": "benign_trusted",
   "description": "Trusted customer-db read, then funds transfer: trusted context must not block an irreversible action",
   "label": "benign",
   "principal": {"role": "finance_assistant"},

@@ -7,6 +7,11 @@
   "required": ["session_id", "principal", "action", "history"],
   "properties": {
     "session_id": {"type": "string", "minLength": 1},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"history_window": {"type": "integer", "minimum": 1}}
+    },
     "principal": {
       "type": "object",
       "additionalProperties": false,

@@ -4,9 +4,11 @@
   "title": "Labeled replay trace",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "description", "label", "principal", "steps"],
+  "required": ["id", "category", "description", "label", "principal", "steps"],
   "properties": {
     "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "category": {"enum": ["benign_trusted", "benign_untrusted", "inject_irreversible", "inject_exfil",
+                          "role_violation", "delayed_injection", "long_session"]},
     "description": {"type": "string"},
     "label": {"enum": ["benign", "adversarial"]},
     "principal": {
