@@ -1,6 +1,6 @@
 """Mock tools: fixed canned strings, no network or filesystem access.
 
-Only the interceptor may call these.
+Only the interceptor may call these, through MockToolExecutor (authz.tools.executor).
 """
 
 from __future__ import annotations

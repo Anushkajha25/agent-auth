@@ -1,7 +1,8 @@
-"""The interceptor: the only code path that may call a mock tool.
+"""The interceptor: the only code path that may run a tool.
 
 Every tool call goes registry lookup -> PDP -> history append -> decision log,
-and the tool runs only on allow. Any PDP failure denies (fail closed).
+and the tool runs (through the ToolExecutor) only on allow. Any PDP failure denies
+(fail closed).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from authz.history import SessionHistory
 from authz.log import DecisionLogger
 from authz.pdp.base import PDP, Decision
 from authz.registry import Registry
-from authz.tools import mock_tools
+from authz.tools.executor import MockToolExecutor, ToolExecutor
 
 
 @dataclass(frozen=True)
@@ -44,12 +45,14 @@ def input_validator() -> jsonschema.protocols.Validator:
 
 class Interceptor:
     def __init__(self, registry: Registry, pdp: PDP, logger: DecisionLogger,
-                 validate_input: bool = False, params: dict | None = None):
+                 validate_input: bool = False, params: dict | None = None,
+                 executor: ToolExecutor | None = None):
         self.registry = registry
         self.pdp = pdp
         self.logger = logger
         self.validate_input = validate_input
         self.params = dict(params) if params else None
+        self.executor = executor if executor is not None else MockToolExecutor()
 
     def handle(self, history: SessionHistory, tool_name: str, args: dict,
                log_extra: dict | None = None) -> Allowed | Denied:
@@ -68,7 +71,7 @@ class Interceptor:
             input_doc["params"] = dict(self.params)
 
         latency_ms: float | None = None
-        if spec is None or tool_name not in mock_tools.TOOLS:
+        if spec is None or not self.executor.has(tool_name):
             decision = Decision(False, ("unknown_tool",))
         elif self.validate_input and not input_validator().is_valid(input_doc):
             decision = Decision(False, ("invalid_input",))
@@ -91,4 +94,6 @@ class Interceptor:
 
         if not decision.allow:
             return Denied(tuple(decision.reasons))
-        return Allowed(mock_tools.TOOLS[tool_name](**args))
+        # May raise ToolExecutionError (e.g. bad args from a live agent); the caller decides
+        # how to report it. The decision itself is already logged as allow.
+        return Allowed(self.executor.execute(tool_name, args, session_id=history.session_id))

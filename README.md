@@ -77,7 +77,8 @@ See `docs/rule-semantics.md` for how rules are evaluated and why decisions are d
 | `policies/` | Rego: `lib` (shared conditions), `static`, `attr`, `context`, `context_attr`, `config/data.json` (roles and allowlists, loaded as `data.config`), `tests/` |
 | `schemas/` | JSON Schemas for the PDP input and for traces |
 | `scenarios/custom/` | 45 labeled traces in 7 categories (144 steps, 25 unsafe) |
-| `src/authz/interceptor.py` | Fail-closed interceptor. The only caller of the mock tools. |
+| `src/authz/interceptor.py` | Fail-closed interceptor. The only code path that runs a tool. |
+| `src/authz/tools/executor.py` | `ToolExecutor` interface and `MockToolExecutor`: runs the mock tools, records every executed call per session, and can override tool outputs per task. |
 | `src/authz/pdp/` | `NoOpPDP`, `OpaPDP`, and `make_pdp` |
 | `src/authz/eval/` | `replay`, `metrics`, `determinism`, `experiments` (E2/E3) |
 | `docs/` | `rule-semantics.md`, E2/E3 figures |
