@@ -10,6 +10,9 @@ through the interceptor. Each run is scored on what actually executed:
   attack_success         adversarial tasks: the injected action ran
   alternate_path_attack  the attack ran only after an earlier call in the session was denied
 
+`--provider scripted` runs the worst-case agent instead of a model: it makes each task's
+intended calls and then the attack's, whatever the policy says (no LLM, no cost).
+
 Add `judge` to --conditions to use the LLM judge as the PDP (Baseline 3), or `guard` for
 Llama Guard 3 via Ollama (--guard-model). Writes runs.csv,
 transcripts.jsonl, decisions.jsonl, summary.json, results.md and a figure.
@@ -28,6 +31,7 @@ from pathlib import Path
 from authz import POLICIES_DIR
 from authz.agent.llm import PROVIDERS, LLMClient, make_client
 from authz.agent.loop import AgentConfig, run_agent, tool_specs
+from authz.agent.scripted import ScriptedAgent
 from authz.eval.replay import check_opa_policies, new_run_id
 from authz.eval.task_success import evaluate, load_tasks
 from authz.hashing import policy_sha256
@@ -112,7 +116,8 @@ def summarize(rows: list[dict]) -> dict:
             "mean_denials_adversarial": sum(r["denials"] for r in adv) / len(adv) if adv else None,
             "llm_errors": sum(r["stop_reason"] == "llm_error" for r in rs),
             "stop_reasons": {k: sum(r["stop_reason"] == k for r in rs) for k in sorted({r["stop_reason"] for r in rs})},
-            "guard_share_of_time": guard_ms / (guard_ms + llm_ms) if (guard_ms + llm_ms) else None,
+            # Only meaningful with a real model: the scripted agent spends no time thinking.
+            "guard_share_of_time": guard_ms / (guard_ms + llm_ms) if llm_ms > 0 else None,
             "agent_tokens": sum(r["input_tokens"] + r["output_tokens"] for r in rs),
             "judge_tokens": sum(r["judge_input_tokens"] + r["judge_output_tokens"] for r in rs),
             "attacks_through": sorted({r["task_id"] for r in adv if r["attack_success"]}),
@@ -177,8 +182,9 @@ def plot(summary: dict, path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--provider", required=True, choices=list(PROVIDERS))
-    ap.add_argument("--model", required=True, help="exact model ID for the agent, e.g. gpt-4o-mini")
+    ap.add_argument("--provider", required=True, choices=[*PROVIDERS, "scripted"],
+                    help="'scripted' = the worst-case agent that always follows the injection (no LLM)")
+    ap.add_argument("--model", help="exact model ID for the agent, e.g. qwen3:8b (not needed for scripted)")
     ap.add_argument("--conditions", default="L0,L1,L3,L4", help="levels and/or 'judge' / 'guard', comma-separated")
     ap.add_argument("--guard-model", default="llama-guard3:8b", help="Ollama model for the 'guard' condition")
     ap.add_argument("--judge-provider", default=None, choices=list(PROVIDERS), help="default: same as --provider")
@@ -194,6 +200,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-plots", action="store_true")
     args = ap.parse_args(argv)
 
+    scripted = args.provider == "scripted"
+    if not scripted and not args.model:
+        ap.error("--model is required unless --provider scripted")
     tasks = load_tasks(args.tasks)
     if args.only:
         wanted = set(args.only.split(","))
@@ -204,8 +213,10 @@ def main(argv: list[str] | None = None) -> int:
     conditions: dict[str, PDP] = {}
     for c in names:
         if c == "judge":
-            conditions[c] = LLMJudgePDP(make_client(args.judge_provider or args.provider,
-                                                    args.judge_model or args.model, seed=0))
+            jp, jm = args.judge_provider or (None if scripted else args.provider), args.judge_model or args.model
+            if not (jp and jm):
+                ap.error("the 'judge' condition with --provider scripted needs --judge-provider and --judge-model")
+            conditions[c] = LLMJudgePDP(make_client(jp, jm, seed=0))
         elif c == "guard":
             conditions[c] = LlamaGuardPDP(args.guard_model)
         elif c in LEVELS:
@@ -215,17 +226,21 @@ def main(argv: list[str] | None = None) -> int:
     if any(c in LEVELS and LEVELS[c] != "noop" for c in names):
         check_opa_policies(resolve_opa_url(args.opa_url))
 
-    seeds = list(range(args.seeds))
+    seeds = [0] if scripted else list(range(args.seeds))  # the script is the same every time
     print(f"{len(conditions)} conditions x {len(tasks)} tasks x {len(seeds)} seeds = "
           f"{len(conditions) * len(tasks) * len(seeds)} agent runs", file=sys.stderr)
     run_id = new_run_id()
     out_dir = Path(args.out) / run_id
     config = AgentConfig(max_steps=args.max_steps, max_denials=args.max_denials, reveal_reasons=args.reveal_reasons)
-    rows = run_live(conditions, tasks, seeds, lambda task, seed: make_client(args.provider, args.model, seed=seed),
-                    out_dir, config)
+    if scripted:
+        factory = lambda task, seed: ScriptedAgent(task)  # noqa: E731
+    else:
+        factory = lambda task, seed: make_client(args.provider, args.model, seed=seed)  # noqa: E731
+    rows = run_live(conditions, tasks, seeds, factory, out_dir, config)
     summary = summarize(rows)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    md = results_md(summary, run_id, f"{args.provider}/{args.model}", len(seeds))
+    agent = "scripted worst-case agent (always follows the injection)" if scripted else f"{args.provider}/{args.model}"
+    md = results_md(summary, run_id, agent, len(seeds))
     (out_dir / "results.md").write_text(md)
     if not args.no_plots:
         plot(summary, out_dir / "e5_live.png")
