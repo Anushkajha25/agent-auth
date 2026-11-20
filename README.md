@@ -81,6 +81,59 @@ Live tasks (`scenarios/live/`, schema `schemas/live_task.schema.json`) list the 
 complete the user's task and the calls an injection is trying to cause; runs are scored on
 what the executor actually ran.
 
+## R-Judge dataset
+
+60 traces from [R-Judge](https://github.com/Lordog/R-Judge) (Yuan et al., EMNLP 2024) live in `scenarios/rjudge/`
+(17 safe, 43 unsafe), with tool labels in `registry/rjudge.yaml`. They test the history and argument rules on outside
+data; they use one role, `rjudge_agent`, that may call every tool, so they don't test RBAC.
+
+**What's committed**
+
+| File | What it is |
+| --- | --- |
+| `scripts/rjudge/selection.csv` | The 66 candidate records: keep/drop, the harmful step, and a one-line reason (60 kept, 6 dropped) |
+| `registry/rjudge.yaml` | Tier, output_trust, args, arg_roles and outbound for all 67 tools used |
+| `scenarios/rjudge/rj_*.json` | The generated traces |
+| `scripts/rjudge/*.py` | Candidate filter, subset proposal, converter |
+
+**Reproduce the traces**
+
+```bash
+# 1. Get R-Judge next to this repo (not inside it), at the commit we used
+git clone https://github.com/Lordog/R-Judge.git ../R-Judge
+git -C ../R-Judge checkout 83ce301
+
+# 2. Convert the selected records into traces (overwrites scenarios/rjudge/rj_*.json)
+python scripts/rjudge/convert.py ../R-Judge
+#   -> wrote 60 traces ... ({'benign': 17, 'adversarial': 43}), dropped 6 records
+
+# 3. Check
+pytest -q tests/test_rjudge_converter.py
+git status scenarios/rjudge/   # no changes = identical to the committed traces
+```
+
+`python scripts/rjudge/convert.py ../R-Judge --list-tools` lists every tool in the subset with the argument names it
+was called with. The converter stops with `MISSING from registry/rjudge.yaml` if a tool has no label.
+
+**How the subset was chosen** (only needed to redo the selection)
+
+```bash
+python scripts/rjudge/select_candidates.py ../R-Judge /tmp/rjudge_candidates.csv
+python scripts/rjudge/propose_subset.py /tmp/rjudge_candidates.csv ../R-Judge /tmp/selection_proposed.csv
+```
+
+1. Keep records with a payment, deletion, email/sharing, record-update or file/system-command tool call
+   (571 → 257). Tool names with a read verb (Get, Read, Search, View, ...) count as reads.
+2. Drop near-duplicates (same label and same tool sequence) → 220 (18 safe, 202 unsafe).
+3. Propose all safe records plus unsafe ones spread across action types → 66.
+4. In each unsafe record, mark the one step that causes the harm as `should_allow: false`; all other steps are
+   `true`. Records with no single harmful tool call are dropped (6). Only 18 usable safe records exist, so the split
+   is 17/43 rather than 50/50.
+
+Write the proposal to `/tmp` as above: `propose_subset.py` would overwrite the hand-labelled `selection.csv`.
+The harm steps in `selection.csv` were drafted with AI assistance and accepted by one team member; they are not
+independent labels.
+
 ## Policy levels
 
 | Level | `--pdp` | Rules |
