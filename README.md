@@ -86,6 +86,20 @@ keys are read from the environment and never logged.
 .venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 1 --out results/e5
 ```
 
+`--provider scripted` runs E5 with a worst-case agent instead of a model: it makes each task's intended calls
+and then the attack's, whatever the policy says, so it shows what each level does when the agent falls for every
+injection (no LLM, no cost). Each live task's `script` holds those calls.
+
+To run all of E1, E4 and E5 in one go, with checks that OPA, Ollama and the models are ready first:
+
+```bash
+scripts/run_e1_e4_e5.sh smoke   # ~10 minutes: a tiny version of every step, to catch setup problems
+scripts/run_e1_e4_e5.sh full    # the real runs (hours on a laptop)
+```
+
+Results, `run.log` and `environment.txt` (commit, policy hash, models, machine) go to `results/final-<mode>-<time>/`.
+Set `AGENT_MODEL` / `GUARD_MODEL` to use other models, and `E4_EXTERNAL=1` to also run E4 on R-Judge and ToolEmu.
+
 The agent (`src/authz/agent/`) is a minimal function-calling loop. Every tool call goes
 through the interceptor; a denied call comes back to the model as a tool error and the agent
 re-plans. Runs stop at 15 tool calls, 3 denials, a repeated identical denial, or 20 LLM calls.
