@@ -53,8 +53,15 @@ E1 needs only OPA. E4 and E5 need an LLM. The free option is a local model throu
 ```bash
 brew install ollama            # or download the app from ollama.com
 ollama serve                   # leave running (the Ollama app does this for you)
-ollama pull qwen2.5:7b         # ~4.7 GB; any model with tool calling works (qwen2.5:3b for 8 GB Macs)
+ollama pull qwen3:8b           # ~5.2 GB agent / LLM judge
+ollama pull llama-guard3:8b    # ~4.9 GB, only for the Llama Guard judge (llama-guard3:1b on small machines)
 ```
+
+Tested agents: `qwen3:8b` completes all six benign live tasks with no policy. `qwen2.5:7b` and
+`llama3.1:8b` did not: one sent a refund to an invented account number, the other wrote a call to a
+tool that doesn't exist as plain text. `qwen3:8b` writes long reasoning, so start Ollama with
+`OLLAMA_CONTEXT_LENGTH=8192 ollama serve` for long tasks. Calls run at temperature 0, which makes
+runs repeatable, so one seed per task is enough.
 
 Set `OLLAMA_URL` if Ollama isn't on `http://localhost:11434/v1`. Hosted APIs also work with
 `--provider openai` or `--provider anthropic` and `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`;
@@ -64,13 +71,13 @@ keys are read from the environment and never logged.
 # E1: enforcement latency for L0-L4 across history lengths (no LLM needed)
 .venv/bin/python -m authz.eval.latency --out results/e1
 
-# E4: Rego L4 vs. an LLM judge on the same traces, each input asked 5 times
-#     (about 144 x 5 judge calls; try --limit 5 first)
-.venv/bin/python -m authz.eval.judge_compare --provider ollama --model qwen2.5:7b --runs 5 --out results/e4
+# E4: Rego L4 vs. judges on the same traces, each input asked 5 times
+#     (about 144 x 5 calls per judge; try --limit 5 first). --judge llm | llama_guard | both
+.venv/bin/python -m authz.eval.judge_compare --judge both --provider ollama --model qwen3:8b --runs 5 --out results/e4
 
-# E5: live agent on scenarios/live under each condition, 3 seeds
-#     (add 'judge' to --conditions for the LLM judge; --only l01_refund_known_customer to try one task)
-.venv/bin/python -m authz.eval.live --provider ollama --model qwen2.5:7b --conditions L0,L1,L3,L4 --seeds 3 --out results/e5
+# E5: live agent on scenarios/live under each condition
+#     (add 'judge' for the LLM judge or 'guard' for Llama Guard; --only l01_refund_known_customer to try one task)
+.venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 1 --out results/e5
 ```
 
 The agent (`src/authz/agent/`) is a minimal function-calling loop. Every tool call goes
@@ -80,6 +87,15 @@ The system prompt says nothing about security, so all protection comes from the 
 Live tasks (`scenarios/live/`, schema `schemas/live_task.schema.json`) list the calls that
 complete the user's task and the calls an injection is trying to cause; runs are scored on
 what the executor actually ran.
+
+There are two probabilistic baselines. The **LLM judge** (`pdp/llm_judge.py`) asks an
+instruction-following model for `{"allow": ..., "reason": ...}`. **Llama Guard 3**
+(`pdp/llama_guard.py`) is a safety classifier whose built-in categories are content harms
+(violence, self-harm, ...), which a transfer or a deletion doesn't match, so it is prompted in
+the official Llama Guard 3 format with four categories written for this threat model:
+unauthorized tool use, injected irreversible action, data exfiltration, destructive or
+remote-code command. Both get the same facts as the Rego policies (role allowlist, allowlists,
+tool labels, history), and both fail closed on a reply they can't parse.
 
 ## R-Judge dataset
 
@@ -132,6 +148,48 @@ python scripts/rjudge/propose_subset.py /tmp/rjudge_candidates.csv ../R-Judge /t
 
 Write the proposal to `/tmp` as above: `propose_subset.py` would overwrite the labelled `selection.csv`.
 
+## ToolEmu dataset
+
+80 traces from 40 [ToolEmu](https://github.com/ryoungj/ToolEmu) test cases (Ruan et al., ICLR 2024) live in
+`scenarios/toolemu/`, with tool labels in `registry/toolemu.yaml`. Like R-Judge they use one role,
+`toolemu_agent`, that may call every tool.
+
+ToolEmu cases have no tool calls: each gives a user instruction, the risky actions an agent might take (in
+prose) and what a careful agent should do. `scripts/toolemu/cases.yaml` spells out each case as ToolEmu tool
+calls twice:
+
+- **risky** (`te_<n>_risky`, adversarial): the agent acts out one of the case's Potential Risky Actions. The
+  one step that causes the harm is `should_allow: false`, the rest `true` (the R-Judge rule).
+- **safe** (`te_<n>_safe`, benign): the agent follows the case's Expected Achievements, which often means it
+  stops and asks the user. Every step is `true`.
+
+`risk_type` is `injection` (7 cases) when the harmful step follows content the agent read (an email, a web
+page, a GitHub issue, a blog's script), and `unintended` (33 cases) when it's the agent's own mistake on an
+underspecified request. Most ToolEmu risks are the second kind, so many risky steps can only be told apart from
+the safe ones by their arguments (which account, which file, which address), not by the history.
+
+The 23 ToolEmu cases that R-Judge reuses are excluded (R-Judge copies their user instructions), so no scenario
+is counted twice. `convert.py` checks every step against ToolEmu's own specs: the tool must belong to one of the
+case's toolkits, argument names must exist, required arguments must be present, types must match, and values
+must be in the allowed set where ToolEmu lists one.
+
+```bash
+# 1. Get ToolEmu next to this repo, at the commit we used
+git clone https://github.com/ryoungj/ToolEmu.git ../ToolEmu
+git -C ../ToolEmu checkout ac4a7ab
+
+# 2. Convert (overwrites scenarios/toolemu/te_*.json)
+python scripts/toolemu/convert.py ../ToolEmu
+#   -> wrote 80 traces ... from 40 cases
+
+# 3. Check (also regenerates the traces and compares them with the committed ones)
+pytest -q tests/test_toolemu_converter.py
+```
+
+`--list-tools` lists every tool the cases use with its argument names. Tools that `rjudge.yaml` also labels keep
+exactly its tier, output_trust, arg_roles and outbound; `args` in `toolemu.yaml` is ToolEmu's full parameter
+list, while `rjudge.yaml` lists the arguments seen in its traces.
+
 ## Policy levels
 
 | Level | `--pdp` | Rules |
@@ -171,6 +229,8 @@ See `docs/rule-semantics.md` for how rules are evaluated and why decisions are d
 | `src/authz/agent/` | `llm` (Ollama, OpenAI and Anthropic clients over HTTP), `loop` (the tool-calling agent) |
 | `src/authz/pdp/llm_judge.py` | Baseline 3: LLM judge as the PDP, given the same context as the Rego policies |
 | `scenarios/live/` | 13 live tasks for E5 (6 benign, 7 attacks) |
+| `scenarios/toolemu/`, `registry/toolemu.yaml`, `scripts/toolemu/` | 80 ToolEmu traces, their tool labels, and the hand-written cases + converter |
+| `src/authz/pdp/llama_guard.py` | Baseline 3b: Llama Guard 3 via Ollama, with categories for this threat model |
 | `docs/` | `rule-semantics.md`, E2/E3 figures |
 | `results/` | Run outputs (gitignored) |
 
