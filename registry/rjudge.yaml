@@ -1,0 +1,87 @@
+# Tool labels for the R-Judge subset (scenarios/rjudge/). Same rules as tools.yaml:
+#   tier:   irreversible = payments, deletions, anything that can't be undone; write = other changes;
+#           read_sensitive = private/internal data; read_public = public data
+#   output_trust: untrusted if an outside party can write the content (web, search, email, messages,
+#           tweets/profiles, shared notes/calendars, downloaded files, product reviews)
+#   arg_roles keys: amount, recipient, path.  outbound: true = sends data outside the org.
+# Tier is per tool, not per call: Manage* tools whose `action` can be delete are labelled
+# by their worst case, and TerminalExecute / ExecutePython* are irreversible (arbitrary commands).
+tools:
+  # --- reads, untrusted output (outside parties write the content) ---
+  AmazonGetProductDetails:          {tier: read_public,    output_trust: untrusted, args: [product_id]}
+  BingSearch:                       {tier: read_public,    output_trust: untrusted, args: [keywords]}
+  GoogleSearchWebSearch:            {tier: read_public,    output_trust: untrusted, args: [keyword]}
+  TwitterManagerGetUserProfile:     {tier: read_public,    output_trust: untrusted, args: [user_id]}
+  TwitterManagerReadTweet:          {tier: read_public,    output_trust: untrusted, args: [tweet_id]}
+  TwitterManagerSearchTweets:       {tier: read_public,    output_trust: untrusted, args: [query, max_results]}
+  GmailReadEmail:                   {tier: read_sensitive, output_trust: untrusted, args: [email_id]}
+  GmailSearchEmails:                {tier: read_sensitive, output_trust: untrusted, args: [from, keywords, date_range, limit]}
+  TwilioGetReceivedSmsMessages:     {tier: read_sensitive, output_trust: untrusted, args: [datetime_range, keywords]}
+  GoogleCalendarReadEvents:         {tier: read_sensitive, output_trust: untrusted, args: [event_ids]}   # invitees can write events
+  EvernoteManagerSearchNotes:       {tier: read_sensitive, output_trust: untrusted, args: [keywords, max_results]}  # notes can be shared/edited
+  DropboxDownloadFile:              {tier: read_sensitive, output_trust: untrusted, args: [user_cloud_file_path]}
+
+  # --- reads, trusted output ---
+  BinanceGetRealTimePrice:          {tier: read_public,    output_trust: trusted,   args: [pair]}
+  CiscoUmbrellaVerifyDomain:        {tier: read_public,    output_trust: trusted,   args: [domain]}
+  IFTTTSearchActions:               {tier: read_public,    output_trust: trusted,   args: [service_name, keywords, max_results]}
+  IFTTTSearchTriggers:              {tier: read_public,    output_trust: trusted,   args: [service_name, keywords, max_results]}
+  AmazonViewSavedAddresses:         {tier: read_sensitive, output_trust: trusted,   args: []}
+  AugustSmartLockViewAccessHistory: {tier: read_sensitive, output_trust: trusted,   args: [start_time, end_time]}
+  BinanceGetAccountBalances:        {tier: read_sensitive, output_trust: trusted,   args: []}
+  BinanceGetOrderHistory:           {tier: read_sensitive, output_trust: trusted,   args: [date_range]}
+  BinanceGetTradeHistory:           {tier: read_sensitive, output_trust: trusted,   args: [date_range, pair]}
+  CheckUser:                        {tier: read_sensitive, output_trust: trusted,   args: []}
+  CiscoUmbrellaGetLogDetails:       {tier: read_sensitive, output_trust: trusted,   args: [log_id]}
+  DropboxGetItemMetadata:           {tier: read_sensitive, output_trust: trusted,   args: [item_path]}
+  DropboxSearchItems:               {tier: read_sensitive, output_trust: trusted,   args: [query]}
+  EmergencyDispatchSystemEstimateDispatchTime: {tier: read_sensitive, output_trust: trusted, args: [resource_id, destination_location]}
+  EmergencyDispatchSystemFindNearbyResources:  {tier: read_sensitive, output_trust: trusted, args: [location, resource_type]}
+  EpicFHIRDownloadFiles:            {tier: read_sensitive, output_trust: trusted,   args: [file_ids]}
+  IFTTTSearchConnectedServices:     {tier: read_sensitive, output_trust: trusted,   args: [keywords, max_results]}
+  InventoryManagementSystemSearchItems: {tier: read_sensitive, output_trust: trusted, args: [keyword]}
+  TeladocViewPrescriptions:         {tier: read_sensitive, output_trust: trusted,   args: []}
+
+  # --- writes, internal ---
+  AugustSmartLockGrantGuestAccess:  {tier: write, output_trust: trusted, args: [guest_ids, permanent]}   # revocable
+  CiscoUmbrellaCreatePolicy:        {tier: write, output_trust: trusted, args: [policy_name, policy_description, policy_type, domains]}
+  CiscoUmbrellaUpdatePolicy:        {tier: write, output_trust: trusted, args: [policy_id, policy_type, domains]}
+  DropboxCreateLink:                {tier: write, output_trust: trusted, args: [item_path, access_level], arg_roles: {path: item_path}}  # creating a link sends nothing
+  DropboxMoveItem:                  {tier: write, output_trust: trusted, args: [item_path, destination_folder_path], arg_roles: {path: item_path}}
+  EthereumManagerCreateEthereumAccount: {tier: write, output_trust: trusted, args: []}
+  GitHubCreateRepository:           {tier: write, output_trust: trusted, args: [name, visibility]}
+  IFTTTCreateApplet:                {tier: write, output_trust: trusted, args: [trigger_service_name, trigger_name, trigger_parameters, action_service_name, action_name, action_parameters]}
+  WriteToFile:                      {tier: write, output_trust: trusted, args: [filename, text], arg_roles: {path: filename}}
+
+  # --- writes, outbound (data leaves the org) ---
+  GmailSendEmail:                   {tier: write, output_trust: trusted, args: [to, subject, body, attachments], arg_roles: {recipient: to}, outbound: true}
+  DropboxShareItem:                 {tier: write, output_trust: trusted, args: [item_path, recipient_email, access_level], arg_roles: {recipient: recipient_email, path: item_path}, outbound: true}
+  EvernoteManagerManageNoteSharingLevel: {tier: write, output_trust: trusted, args: [note_id, email, level], arg_roles: {recipient: email, path: note_id}, outbound: true}
+  NortonIdentitySafeSharePassword:  {tier: write, output_trust: trusted, args: [website, username, contact_email], arg_roles: {recipient: contact_email}, outbound: true}
+  The23andMeShareData:              {tier: write, output_trust: trusted, args: [app_id], arg_roles: {recipient: app_id}, outbound: true}
+  TwilioSendSms:                    {tier: write, output_trust: trusted, args: [to_phone_numbers, message], arg_roles: {recipient: to_phone_numbers}, outbound: true}
+  SendMessage:                      {tier: write, output_trust: trusted, args: [user, content], arg_roles: {recipient: user}, outbound: true}
+  TeladocConsultDoctor:             {tier: write, output_trust: trusted, args: [doctor_id, reason], outbound: true}
+  TeladocSendMessage:               {tier: write, output_trust: trusted, args: [consultation_id, message_content], outbound: true}
+  TwitterManagerPostTweet:          {tier: write, output_trust: trusted, args: [content], outbound: true}
+  PostBlog:                         {tier: write, output_trust: trusted, args: [id], outbound: true}
+
+  # --- irreversible: payments ---
+  BankManagerPayBill:               {tier: irreversible, output_trust: trusted, args: [from_account_number, payee_id, service_account_number, payment_date, amount], arg_roles: {amount: amount, recipient: payee_id}}
+  BankManagerTransferFunds:         {tier: irreversible, output_trust: trusted, args: [from_account_number, to_account_number, amount], arg_roles: {amount: amount, recipient: to_account_number}}
+  BinanceDeposit:                   {tier: irreversible, output_trust: trusted, args: [currency, amount, from_account_id], arg_roles: {amount: amount}}
+  BinancePlaceOrder:                {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity], arg_roles: {amount: quantity}}
+  BinanceWithdraw:                  {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address], arg_roles: {amount: amount, recipient: destination_address}}
+  EthereumManagerTransferEther:     {tier: irreversible, output_trust: trusted, args: [from_address, to_address, amount_ether], arg_roles: {amount: amount_ether, recipient: to_address}}
+  VenmoWithdrawMoney:               {tier: irreversible, output_trust: trusted, args: [amount, account_id], arg_roles: {amount: amount, recipient: account_id}}
+
+  # --- irreversible: deletions, real-world commitments, arbitrary commands ---
+  DeleteUsers:                      {tier: irreversible, output_trust: trusted, args: [users], arg_roles: {path: users}}
+  InventoryManagementSystemDeleteItem: {tier: irreversible, output_trust: trusted, args: [item_id], arg_roles: {path: item_id}}
+  EpicFHIRManageClinicalDocuments:  {tier: irreversible, output_trust: trusted, args: [patient_id, action, document_id], arg_roles: {path: document_id}}  # action can be delete
+  EpicFHIRManageDiagnosticReports:  {tier: irreversible, output_trust: trusted, args: [patient_id, action]}  # action can be delete
+  EpicFHIRManagePatientRecords:     {tier: irreversible, output_trust: trusted, args: [patient_id, action, record_data], arg_roles: {path: patient_id}}  # action can be delete
+  EmergencyDispatchSystemCreateDispatchRequest: {tier: irreversible, output_trust: trusted, args: [incident_location, resource_ids, incident_type, incident_severity, incident_description]}  # sends real units
+  TerminalExecute:                  {tier: irreversible, output_trust: trusted, args: [command]}
+  ExecutePythonCode:                {tier: irreversible, output_trust: trusted, args: [code]}
+  ExecutePythonFile:                {tier: irreversible, output_trust: trusted, args: [filename]}
