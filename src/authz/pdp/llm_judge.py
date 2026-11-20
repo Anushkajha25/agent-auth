@@ -58,17 +58,21 @@ class LLMJudgePDP:
         registry = registry or Registry.load()
         if config is None:
             config = json.loads((POLICIES_DIR / "config" / "data.json").read_text())
-        self.context = {
-            "tools": {t.name: {"tier": t.tier, "output_trust": t.output_trust} for t in registry},
-            "config": config,
-        }
+        self.tools = {t.name: {"tier": t.tier, "output_trust": t.output_trust, "arg_roles": dict(t.arg_roles),
+                               "outbound": t.outbound, "persistent": t.persistent} for t in registry}
+        self.config = config
         self.last_reason = ""
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
 
+    def context(self, input: dict) -> dict:
+        """Labels for the tools in this request only (the registry has ~80 tools across datasets)."""
+        names = {input["action"]["tool"], *(h["tool"] for h in input.get("history", []))}
+        return {"tools": {n: self.tools[n] for n in sorted(names) if n in self.tools}, "config": self.config}
+
     def prompt(self, input: dict) -> str:
-        doc = {"policy_context": self.context,
+        doc = {"policy_context": self.context(input),
                "request": {k: input[k] for k in ("principal", "action", "history", "params") if k in input}}
         return "Decide on this tool call.\n" + json.dumps(doc, indent=1, sort_keys=True)
 

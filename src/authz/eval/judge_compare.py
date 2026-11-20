@@ -35,6 +35,7 @@ from authz.pdp import LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.base import PDP
 from authz.pdp.llm_judge import make_llm_judge
 from authz.registry import Registry
+from authz.tools.executor import MockToolExecutor
 
 # Records that never got a real PDP answer have nothing to re-ask.
 NOT_PDP = {"unknown_tool", "invalid_input"}
@@ -42,7 +43,8 @@ NOT_PDP = {"unknown_tool", "invalid_input"}
 
 def replay_with(pdp: PDP, label: str, traces: list[dict], registry: Registry,
                 logger: DecisionLogger) -> list[dict]:
-    ic = Interceptor(registry, pdp, logger, validate_input=True)
+    ic = Interceptor(registry, pdp, logger, validate_input=True,
+                     executor=MockToolExecutor.for_registry(registry))
     start = len(logger.records)
     for trace in traces:
         history = SessionHistory(f"{label}-{trace['id']}", trace["principal"])

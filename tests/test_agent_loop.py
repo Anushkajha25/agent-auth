@@ -2,6 +2,7 @@ from authz.agent.llm import LLMError
 from authz.agent.loop import DENIED_MESSAGE, AgentConfig, run_agent, tool_specs
 from authz.interceptor import Interceptor
 from authz.pdp.base import Decision
+from authz.tools import mock_tools
 from authz.tools.executor import MockToolExecutor
 from conftest import ScriptedLLM, final_reply, tool_reply
 
@@ -28,7 +29,9 @@ def make(registry, logger, pdp, executor=None):
 
 def test_tool_specs_typed_from_signatures(registry):
     specs = {s["name"]: s for s in tool_specs(registry)}
-    assert set(specs) == set(registry.names())
+    # Only tools with a mock are offered; replay-only tools (R-Judge etc.) are not.
+    assert set(specs) == set(mock_tools.TOOLS)
+    assert "GmailSendEmail" in registry.names() and "GmailSendEmail" not in specs
     t = specs["transfer_funds"]["parameters"]
     assert t["properties"] == {"to_account": {"type": "string"}, "amount": {"type": "number"}}
     assert t["required"] == ["to_account", "amount"]

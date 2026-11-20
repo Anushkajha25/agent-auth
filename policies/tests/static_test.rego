@@ -36,3 +36,8 @@ test_ignores_untrusted_history if {
 	]})
 	static.allow with input as inp
 }
+
+test_unrestricted_role_allowed_any_tool if {
+	inp := object.union(in_role, {"principal": {"role": "rjudge_agent"}, "action": {"step": 1, "tool": "BankManagerTransferFunds", "tier": "irreversible", "args": {}}})
+	static.decision == {"allow": true, "reasons": []} with input as inp
+}

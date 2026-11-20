@@ -6,7 +6,7 @@ def test_rule_counts():
     assert rule_count("static") == 1
     assert rule_count("context") == 3
     assert rule_count("attr") == 5
-    assert rule_count("context_attr") == 6
+    assert rule_count("context_attr") == 7
 
 
 def test_by_category():

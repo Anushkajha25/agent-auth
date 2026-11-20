@@ -25,8 +25,9 @@ LEVEL_OF = {v: k for k, v in LEVELS.items()}
 WINDOWS = [1, 2, 3, 4, 5, 6, 8, None]  # None = whole session
 WINDOW_PDPS = ["context", "context_attr"]
 
-ATTACKS = ["role_violation", "inject_irreversible", "inject_exfil", "delayed_injection", "long_session"]
-BENIGN = ["benign_trusted", "benign_untrusted", "long_session"]
+ATTACKS = ["role_violation", "inject_irreversible", "inject_exfil", "delayed_injection", "long_session",
+           "inject_memory", "external_unsafe"]
+BENIGN = ["benign_trusted", "benign_untrusted", "long_session", "external_safe"]
 
 # Colors: reference categorical slots 1 and 2, plus text/grid inks.
 BLUE, ORANGE = "#2a78d6", "#eb6834"

@@ -44,6 +44,14 @@ def delete_file(path: str) -> str:
     return "file deleted"
 
 
+def read_memory(key: str) -> str:
+    return f"memory[{key}]: customer prefers email contact; usual vendor is ACCT-VENDOR-01"
+
+
+def write_memory(key: str, value: str) -> str:
+    return f"memory saved: {key}"
+
+
 TOOLS = {
     "fetch_url": fetch_url,
     "search_web": search_web,
@@ -53,4 +61,6 @@ TOOLS = {
     "update_record": update_record,
     "transfer_funds": transfer_funds,
     "delete_file": delete_file,
+    "read_memory": read_memory,
+    "write_memory": write_memory,
 }

@@ -71,3 +71,8 @@ test_empty_history_matches_static_out_of_role if {
 	context.decision == static.decision with input as inp
 	not context.allow with input as inp
 }
+
+test_unrestricted_role_still_subject_to_taint if {
+	inp := object.union(transfer([untrusted_read("allow")]), {"principal": {"role": "rjudge_agent"}})
+	context.decision == {"allow": false, "reasons": ["irreversible_after_untrusted"]} with input as inp
+}

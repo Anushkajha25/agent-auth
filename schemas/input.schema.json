@@ -10,7 +10,10 @@
     "params": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {"history_window": {"type": "integer", "minimum": 1}}
+      "properties": {
+        "history_window": {"type": "integer", "minimum": 1},
+        "enabled_rules": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
     },
     "principal": {
       "type": "object",
@@ -26,7 +29,14 @@
         "step": {"type": "integer", "minimum": 1},
         "tool": {"type": "string", "minLength": 1},
         "tier": {"enum": ["read_public", "read_sensitive", "write", "irreversible"]},
-        "args": {"type": "object"}
+        "args": {"type": "object"},
+        "arg_roles": {
+          "type": "object",
+          "propertyNames": {"enum": ["amount", "recipient", "path"]},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "outbound": {"type": "boolean"},
+        "persistent": {"type": "boolean"}
       }
     },
     "history": {

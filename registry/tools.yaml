@@ -1,10 +1,18 @@
 # Single source of truth for tool labels. No LLM ever assigns a label.
+#   arg_roles: which argument the tier-based rules check (recipient, amount, path)
+#   outbound:  the tool sends data outside the organisation
+#   persistent: the tool writes state that later sessions read back
 tools:
   fetch_url:        {tier: read_public,    output_trust: untrusted, args: [url]}
   search_web:       {tier: read_public,    output_trust: untrusted, args: [query]}
   read_email:       {tier: read_sensitive, output_trust: untrusted, args: [folder]}
   read_customer_db: {tier: read_sensitive, output_trust: trusted,   args: [customer_id]}
-  send_email:       {tier: write,          output_trust: trusted,   args: [to, body]}
-  update_record:    {tier: write,          output_trust: trusted,   args: [record_id, fields]}
-  transfer_funds:   {tier: irreversible,   output_trust: trusted,   args: [to_account, amount]}
-  delete_file:      {tier: irreversible,   output_trust: trusted,   args: [path]}
+  send_email:       {tier: write,          output_trust: trusted,   args: [to, body], arg_roles: {recipient: to}, outbound: true}
+  update_record:    {tier: write,          output_trust: trusted,   args: [record_id, fields]}  # outbound only for public fields (data.config.public_fields)
+  transfer_funds:   {tier: irreversible,   output_trust: trusted,   args: [to_account, amount], arg_roles: {recipient: to_account, amount: amount}}
+  delete_file:      {tier: irreversible,   output_trust: trusted,   args: [path], arg_roles: {path: path}}
+  # Long-term memory. read_memory is trusted because writes after untrusted input are blocked
+  # (persistent_write_after_untrusted), so nothing poisoned gets in; the tier ablation tests
+  # the untrusted label.
+  read_memory:      {tier: read_sensitive, output_trust: trusted,   args: [key]}
+  write_memory:     {tier: write,          output_trust: trusted,   args: [key, value], persistent: true}

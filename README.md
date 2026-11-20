@@ -38,6 +38,12 @@ docker compose run --rm opa test /policies -v
 # E2/E3: results by category, level trade-off, history-window sweep, with figures
 .venv/bin/python -m authz.eval.experiments --out results/experiments
 
+# P5: rule-count ablation on L4 (cumulative and leave-one-out), per dataset and combined
+.venv/bin/python -m authz.eval.rule_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory
+
+# P6: tier ablation: tighten/loosen registry labels and re-run L2-L4 on every dataset
+.venv/bin/python -m authz.eval.tier_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory
+
 # Re-check every logged decision 5 times
 .venv/bin/python -m authz.eval.determinism --log results/<run_id>/decisions.jsonl --runs 5
 
@@ -85,7 +91,9 @@ what the executor actually ran.
 
 60 traces from [R-Judge](https://github.com/Lordog/R-Judge) (Yuan et al., EMNLP 2024) live in `scenarios/rjudge/`
 (17 safe, 43 unsafe), with tool labels in `registry/rjudge.yaml`. They test the history and argument rules on outside
-data; they use one role, `rjudge_agent`, that may call every tool, so they don't test RBAC.
+data; they use one role, `rjudge_agent`, listed in `unrestricted_roles` in `policies/config/data.json`, so it may call
+every tool and they don't test RBAC. Every other rule still applies. R-Judge tools have no mock implementation: replay
+runs them on a stub that accepts any arguments, and the live agent never sees them.
 
 **What's committed**
 
@@ -138,15 +146,21 @@ Write the proposal to `/tmp` as above: `propose_subset.py` would overwrite the l
 |---|---|---|
 | L0 | `noop` | Allow everything |
 | L1 | `static` | Role allowlist |
-| L2 | `attr` | Role + payee, amount and delete-path checks, no history |
+| L2 | `attr` | Role + recipient, amount and path checks on irreversible actions, no history |
 | L3 | `context` | Role + deny irreversible actions after untrusted input |
-| L4 | `context_attr` | Role + payee/amount/path checks once tainted + no external email after sensitive and untrusted input |
+| L4 | `context_attr` | Role + recipient/amount/path checks once tainted + no outbound data to outside parties after sensitive and untrusted input + no memory writes after untrusted input |
+
+The argument rules are **tier-based templates**: they never name a tool. They read the action's tier, the
+registry's `arg_roles` (which argument is the `recipient`, `amount` or `path`) and `outbound` flag, so a tool from
+another dataset is covered once it is labelled. Writing to a public field (`public_fields` in `data.json`, e.g. a
+ticket's `public_note`) counts as outbound. Tools marked `persistent` (agent memory) can't be written after
+untrusted input, so an injection can't outlive its session.
 
 See `docs/rule-semantics.md` for how rules are evaluated and why decisions are deterministic.
 
 ## Expected results
 
-45 traces, 144 steps, 25 of them unsafe.
+Custom suite: 45 traces, 144 steps, 25 of them unsafe.
 
 | Level | Violation rate | False positive rate |
 |---|---|---|
@@ -154,20 +168,36 @@ See `docs/rule-semantics.md` for how rules are evaluated and why decisions are d
 | L1 static | 20/25 (80%), catches only role violations | 0/119 |
 | L2 attr | 7/25 (28%), misses exfiltration | 3/119 |
 | L3 context | 7/25 (28%), misses exfiltration | 7/119 |
-| L4 context_attr | 1/25 (4%), misses t030 | 1/119 (t018) |
+| L4 context_attr | 0/25 (0%) | 1/119 (t018) |
+
+R-Judge (60 traces, 143 steps, 43 unsafe) and memory (5 traces, 11 steps, 2 unsafe):
+
+| Level | R-Judge violations | R-Judge false positives | Memory violations | Memory false positives |
+|---|---|---|---|---|
+| L0 noop | 43/43 | 0/100 | 2/2 | 0/9 |
+| L1 static | 43/43 (unrestricted role) | 0/100 | 2/2 | 0/9 |
+| L2 attr | 30/43 | 4/100 | 2/2 | 0/9 |
+| L3 context | 29/43 | 4/100 | 2/2 | 0/9 |
+| L4 context_attr | 21/43 | 3/100 | 0/2 | 1/9 (m05) |
+
+Many R-Judge harms happen with no untrusted input before them (the "unintended" risk type), which taint-based
+rules can't catch by design. The allowlists (`approved_payees`, internal email domain) belong to our fictional
+company, so legitimate R-Judge payments and shares after untrusted input are denied; we report this rather than
+add R-Judge's accounts to the lists.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `registry/tools.yaml` | Tool labels (tier, output trust). The single source of truth. |
-| `policies/` | Rego: `lib` (shared conditions), `static`, `attr`, `context`, `context_attr`, `config/data.json` (roles and allowlists, loaded as `data.config`), `tests/` |
+| `registry/` | Tool labels, the single source of truth. Every `*.yaml` is loaded: `tools.yaml` (our 10 tools, each with a mock), `rjudge.yaml` (R-Judge). Per tool: `tier`, `output_trust`, `args`, and optionally `arg_roles`, `outbound`, `persistent` |
+| `policies/` | Rego: `lib` (shared conditions), `static`, `attr`, `context`, `context_attr`, `config/data.json` (roles, `unrestricted_roles`, allowlists and `public_fields`, loaded as `data.config`), `tests/` |
 | `schemas/` | JSON Schemas for the PDP input, traces and live tasks |
 | `scenarios/custom/` | 45 labeled traces in 7 categories (144 steps, 25 unsafe) |
+| `scenarios/memory/` | 5 memory-poisoning traces (3 benign, 2 attacks) |
 | `src/authz/interceptor.py` | Fail-closed interceptor. The only code path that runs a tool. |
-| `src/authz/tools/executor.py` | `ToolExecutor` interface and `MockToolExecutor`: runs the mock tools, records every executed call per session, and can override tool outputs per task. |
+| `src/authz/tools/executor.py` | `ToolExecutor` interface and `MockToolExecutor`: runs the mock tools, records every executed call per session, and can override tool outputs per task. In replay, registry tools without a mock run on a stub. |
 | `src/authz/pdp/` | `NoOpPDP`, `OpaPDP`, and `make_pdp` |
-| `src/authz/eval/` | `replay`, `metrics`, `determinism`, `experiments` (E2/E3), `latency` (E1), `judge_compare` (E4), `live` (E5), `task_success` |
+| `src/authz/eval/` | `replay`, `metrics`, `determinism`, `experiments` (E2/E3), `latency` (E1), `judge_compare` (E4), `live` (E5), `task_success`, `rule_ablation` (P5), `tier_ablation` (P6) |
 | `src/authz/agent/` | `llm` (Ollama, OpenAI and Anthropic clients over HTTP), `loop` (the tool-calling agent) |
 | `src/authz/pdp/llm_judge.py` | Baseline 3: LLM judge as the PDP, given the same context as the Rego policies |
 | `scenarios/live/` | 13 live tasks for E5 (6 benign, 7 attacks) |
