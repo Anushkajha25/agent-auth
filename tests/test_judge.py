@@ -86,3 +86,11 @@ def test_compare_measures_consistency(tmp_path):
     assert "| allow |" in md and "changed its answer" in md
     lines = (tmp_path / "e4_decisions.csv").read_text().splitlines()
     assert lines[0].endswith("run1,run2,run3") and len(lines) == 1 + 2 * steps
+
+
+def test_judge_tool_label_for_currency_tools(registry):
+    """BinanceWithdraw's unit is per call: the tool label says so instead of claiming USD;
+    the call's own unit reaches the judge in request.action.amount_unit."""
+    judge = LLMJudgePDP(ScriptedLLM([]), registry)
+    assert judge.tools["BinanceWithdraw"]["amount_unit"] == "given by the currency argument"
+    assert judge.tools["BinancePlaceOrder"]["amount_unit"] == "crypto"

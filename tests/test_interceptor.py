@@ -151,3 +151,15 @@ def test_registry_tool_without_mock_is_unknown_in_live_mode(registry, logger):
     pdp = FakePDP()
     out = make(registry, logger, pdp).handle(external_session(), "GmailSendEmail", {"to": "a"})
     assert out == Denied(("unknown_tool",)) and pdp.calls == []
+
+
+def test_amount_unit_comes_from_the_currency_argument(registry, logger):
+    """The judges get the same unit as the Rego policies (lib.rego amount_unit): BinanceWithdraw's
+    unit is its currency argument, not USD."""
+    from authz.tools.executor import MockToolExecutor
+    pdp = FakePDP()
+    ic = Interceptor(registry, pdp, logger, executor=MockToolExecutor(stub_tools=["BinanceWithdraw"]))
+    h = SessionHistory("s-unit", {"role": "rjudge_agent"})
+    ic.handle(h, "BinanceWithdraw", {"currency": "btc", "amount": 2.5, "destination_address": "a"})
+    ic.handle(h, "BinanceWithdraw", {"amount": 2.5, "destination_address": "a"})
+    assert [c["action"]["amount_unit"] for c in pdp.calls] == ["BTC", "unknown"]

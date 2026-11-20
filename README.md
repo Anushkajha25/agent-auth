@@ -84,7 +84,7 @@ keys are read from the environment and never logged.
 
 # E5: live agent on scenarios/live under each condition
 #     (add 'judge' for the LLM judge or 'guard' for Llama Guard; --only l01_refund_known_customer to try one task)
-.venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 1 --out results/e5
+.venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 3 --out results/e5
 ```
 
 `--provider scripted` runs E5 with a worst-case agent instead of a model: it makes each task's intended calls
@@ -95,11 +95,13 @@ To run all of E1, E4 and E5 in one go, with checks that OPA, Ollama and the mode
 
 ```bash
 scripts/run_e1_e4_e5.sh smoke   # ~10 minutes: a tiny version of every step, to catch setup problems
-scripts/run_e1_e4_e5.sh full    # the real runs (hours on a laptop)
+scripts/run_e1_e4_e5.sh full    # the real runs (most of a night on a laptop)
 ```
 
 Results, `run.log` and `environment.txt` (commit, policy hash, models, machine) go to `results/final-<mode>-<time>/`.
-Set `AGENT_MODEL` / `GUARD_MODEL` to use other models, and `E4_EXTERNAL=1` to also run E4 on R-Judge and ToolEmu.
+`full` runs E4 on the custom suite, R-Judge and ToolEmu (L4 was tuned on the custom suite, so the external
+comparison is the fairer one) and E5 with 3 seeds per task. Set `E4_EXTERNAL=0` to skip the external E4 runs,
+`E5_SEEDS` to change the seed count, and `AGENT_MODEL` / `GUARD_MODEL` to use other models.
 
 The agent (`src/authz/agent/`) is a minimal function-calling loop. Every tool call goes
 through the interceptor; a denied call comes back to the model as a tool error and the agent
@@ -279,8 +281,8 @@ role only 105/110 violations and 0 false positives; + payee 89; + amount 84; + d
 gives 74/110) and `persistent_write_after_untrusted` only matters on the memory set. Full tables:
 `docs/figures/p5/results.md`.
 
-**P6, tier labels (same policies, registry changed).** L4 barely moves when labels are tightened, but loosening
-them hurts: marking email as trusted raises L4's custom violations from 0/25 to 9/25, web pages as trusted to
+**P6, tier labels (same policies, registry changed).** L4's misses barely move when labels are tightened, though
+its false positives rise (`customer_db_untrusted`: 8 to 12 of 394 combined). Loosening them hurts: marking email as trusted raises L4's custom violations from 0/25 to 9/25, web pages as trusted to
 10/25, and `delete_file` as a plain write to 5/25. Marking every outbound tool irreversible helps L3 (custom 7 → 1,
 R-Judge 29 → 18) at the cost of more false positives (custom 7 → 11). So output_trust labels carry most of the
 weight. Full tables: `docs/figures/p6/results.md`.

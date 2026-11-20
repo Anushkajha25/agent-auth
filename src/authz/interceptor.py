@@ -70,7 +70,7 @@ class Interceptor:
                        "arg_roles": dict(spec.arg_roles) if spec else {},
                        "outbound": spec.outbound if spec else False,
                        "persistent": spec.persistent if spec else False,
-                       "amount_unit": (spec.amount_unit or "USD") if spec else "USD"},
+                       "amount_unit": spec.unit_for(args) if spec else "USD"},
             "history": history.as_policy_input(),
         }
         if self.params:

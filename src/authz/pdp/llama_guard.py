@@ -113,7 +113,7 @@ class LlamaGuardPDP:
             return {"tier": "unknown"}
         return {"tier": spec.tier, "output_trust": spec.output_trust, "arg_roles": dict(spec.arg_roles),
                 "outbound": spec.outbound, "persistent": spec.persistent,
-                "amount_unit": spec.amount_unit or "USD"}
+                "amount_unit": spec.unit_label()}
 
     def role_allowlist(self, role: str):
         """The tools a role may call, or "any tool" for roles the policies don't restrict
@@ -129,7 +129,8 @@ class LlamaGuardPDP:
                    for h in input.get("history", [])]
         context = json.dumps({"role": role, "role_allowlist": self.role_allowlist(role),
                               "allowlists": allowlists, "earlier_steps": history}, sort_keys=True)
-        action = json.dumps({**input["action"], **self._labels(input["action"]["tool"])}, sort_keys=True)
+        # The action's own fields win: its amount_unit is this call's unit (e.g. BTC), not the tool's label.
+        action = json.dumps({**self._labels(input["action"]["tool"]), **input["action"]}, sort_keys=True)
         cats = "\n".join(f"{code}: {title}.\n{desc}" for code, (title, desc) in CATEGORIES.items())
         return TEMPLATE.format(categories=cats, context=context, action=action)
 

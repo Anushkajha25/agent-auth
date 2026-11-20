@@ -48,6 +48,21 @@ class ToolSpec:
     amount_unit: str = ""  # "" means USD
     source: str = ""  # registry file stem, e.g. "tools" or "rjudge"
 
+    def unit_label(self) -> str:
+        """The amount unit for describing the tool when there is no call at hand (judge prompts, history)."""
+        if "currency" in self.arg_roles:
+            return f"given by the {self.arg_roles['currency']} argument"
+        return self.amount_unit or "USD"
+
+    def unit_for(self, args: dict) -> str:
+        """The unit of this call's amount. Mirrors amount_unit in policies/lib/lib.rego, so the judges and
+        the policies see the same unit: the currency argument, upper-cased, when the tool has one ("unknown"
+        if it's missing or not a string), otherwise the registry's amount_unit, otherwise USD."""
+        if "currency" in self.arg_roles:
+            v = args.get(self.arg_roles["currency"])
+            return v.upper() if isinstance(v, str) else "unknown"
+        return self.amount_unit or "USD"
+
 
 def _parse_tool(name: str, spec, source: str) -> ToolSpec:
     where = f"{source}.yaml: {name}"

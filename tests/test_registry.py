@@ -143,3 +143,12 @@ def test_rejects_bad_spec(tmp_path, spec):
     p = write(tmp_path, "tools.yaml", f"tools:\n  x: {spec}\n")
     with pytest.raises(RegistryError):
         Registry.load(p)
+
+
+def test_unit_for_a_call_mirrors_lib_rego(registry):
+    w = registry.get("BinanceWithdraw")
+    assert w.unit_for({"currency": "eth"}) == "ETH"
+    assert w.unit_for({}) == "unknown" and w.unit_for({"currency": 3}) == "unknown"
+    assert w.unit_label() == "given by the currency argument"
+    assert registry.get("EthereumManagerTransferEther").unit_for({"amount_ether": 1}) == "ETH"
+    assert registry.get("transfer_funds").unit_for({}) == "USD" == registry.get("transfer_funds").unit_label()

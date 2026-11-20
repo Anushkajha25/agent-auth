@@ -198,3 +198,13 @@ def test_e5_guard_condition_blocks_injected_transfer(tmp_path, fake_ollama):
     rows = live.run_live({"guard": LlamaGuardPDP()}, tasks, [0], naive_agent, tmp_path)
     assert rows[0]["attack_success"] is False and rows[0]["denials"] == 1
     assert rows[0]["judge_input_tokens"] > 0
+
+
+def test_prompt_uses_the_calls_unit_not_the_tools_label(registry):
+    """For a tool whose unit comes from an argument, the action shows this call's unit (BTC)."""
+    g = LlamaGuardPDP(registry=registry, session=FakeSession())
+    inp = dict(INPUT, principal={"role": "rjudge_agent"},
+               action={"step": 1, "tool": "BinanceWithdraw", "tier": "irreversible",
+                       "args": {"currency": "BTC", "amount": 2.5, "destination_address": "a"}, "amount_unit": "BTC"})
+    action = json.loads(next(ln for ln in g.prompt(inp).splitlines() if ln.startswith("Agent:")).split(": ", 2)[2])
+    assert action["amount_unit"] == "BTC" and action["output_trust"] == "trusted"

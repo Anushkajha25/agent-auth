@@ -7,7 +7,9 @@
 #
 # Needs: OPA running with the current policies (docker compose up -d), Ollama running with the
 # agent and guard models pulled. Override with AGENT_MODEL, GUARD_MODEL, OLLAMA_URL, OPA_URL.
-# E4_EXTERNAL=1 also runs E4 on R-Judge and ToolEmu (many more judge calls).
+# E4 runs on the custom suite and, in full mode, on R-Judge and ToolEmu too: L4 was tuned on the custom
+# suite, so the external comparison is the fairer one. E4_EXTERNAL=0 skips the external runs (many judge calls).
+# E5 with the real agent uses E5_SEEDS seeds per task (default 3 in full mode): temperature 0 is not repeatable.
 # Everything goes to results/final-<mode>-<time>/, with run.log and environment.txt.
 set -euo pipefail
 
@@ -71,11 +73,16 @@ if [ "$MODE" = "smoke" ]; then
   E1_ARGS="--n 50 --warmup 10 --history 0,10"
   E4_ARGS="--runs 2 --limit 2"
   E5_ARGS="--only l01_refund_known_customer,l07_email_injection_transfer --conditions L0,L4,guard"
+  E4_EXTERNAL="${E4_EXTERNAL:-0}"
+  E5_SEEDS="${E5_SEEDS:-1}"
 else
   E1_ARGS=""
   E4_ARGS="--runs 5"
   E5_ARGS="--conditions L0,L1,L3,L4,guard"
+  E4_EXTERNAL="${E4_EXTERNAL:-1}"
+  E5_SEEDS="${E5_SEEDS:-3}"
 fi
+echo "E4_EXTERNAL=$E4_EXTERNAL E5_SEEDS=$E5_SEEDS" >>"$OUT/environment.txt"
 
 # ---------- E1 ----------
 say "E1: latency (no LLM)"
@@ -85,7 +92,7 @@ run "$PY" -m authz.eval.latency --out "$OUT/e1" $E1_ARGS
 say "E4: L4 vs LLM judge ($AGENT_MODEL) and Llama Guard ($GUARD_MODEL), custom suite"
 run "$PY" -m authz.eval.judge_compare --judge both --provider ollama --model "$AGENT_MODEL" \
   --guard-model "$GUARD_MODEL" --traces scenarios/custom --out "$OUT/e4-custom" $E4_ARGS
-if [ "${E4_EXTERNAL:-0}" = "1" ]; then
+if [ "$E4_EXTERNAL" = "1" ]; then
   for d in rjudge toolemu; do
     say "E4 on $d"
     run "$PY" -m authz.eval.judge_compare --judge both --provider ollama --model "$AGENT_MODEL" \
@@ -99,7 +106,7 @@ run "$PY" -m authz.eval.live --provider scripted --conditions L0,L1,L2,L3,L4 --o
 
 say "E5b: real agent ($AGENT_MODEL)"
 run "$PY" -m authz.eval.live --provider ollama --model "$AGENT_MODEL" --guard-model "$GUARD_MODEL" \
-  --seeds 1 --out "$OUT/e5-live" $E5_ARGS
+  --seeds "$E5_SEEDS" --out "$OUT/e5-live" $E5_ARGS
 
 say "Done"
 {
