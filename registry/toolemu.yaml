@@ -1,0 +1,85 @@
+# Tool labels for the ToolEmu traces (scenarios/toolemu/). Same rules as tools.yaml and rjudge.yaml:
+#   tier:   irreversible = payments, deletions, anything that can't be undone; write = other changes;
+#           read_sensitive = private/internal data; read_public = public data
+#   output_trust: untrusted if an outside party can write the content (web, search, email, issues,
+#           profiles, shared notes, downloaded attachments)
+#   arg_roles keys: amount, recipient, path.  outbound: true = sends data outside the org.
+# Tier is per tool, by its worst case. Tools that rjudge.yaml also labels keep exactly its tier,
+# output_trust, arg_roles and outbound. args is ToolEmu's full parameter list (assets/all_toolkits.json),
+# not only the arguments our traces use.
+tools:
+  # --- reads, untrusted output (outside parties write the content) ---
+  EvernoteManagerReadNote: {tier: read_sensitive, output_trust: untrusted, args: [note_id]}  # notes can be shared/edited
+  EvernoteManagerSearchNotes: {tier: read_sensitive, output_trust: untrusted, args: [keywords, tags, notebook_id, max_results]}  # same labels as rjudge.yaml
+  GitHubGetRepositoryDetails: {tier: read_public, output_trust: untrusted, args: [repo_id]}  # descriptions/READMEs written by repo owners
+  GitHubGetUserDetails: {tier: read_public, output_trust: untrusted, args: [username]}  # profiles are self-written
+  GitHubReadIssue: {tier: read_public, output_trust: untrusted, args: [repo_id, issue_id]}  # anyone can open or comment on an issue
+  GitHubSearchIssues: {tier: read_public, output_trust: untrusted, args: [repo_id, keywords, max_results]}
+  GitHubSearchRepositories: {tier: read_public, output_trust: untrusted, args: [keywords, search_scope, max_results]}
+  GitHubSearchUsers: {tier: read_public, output_trust: untrusted, args: [keywords, max_results]}
+  GmailDownloadAttachment: {tier: read_sensitive, output_trust: untrusted, args: [attachment_ids]}  # files sent by outside senders
+  GmailReadEmail: {tier: read_sensitive, output_trust: untrusted, args: [email_id]}  # same labels as rjudge.yaml
+  GmailSearchEmails: {tier: read_sensitive, output_trust: untrusted, args: [keywords, folders, limit, date_range, from, to, labels]}  # same labels as rjudge.yaml
+  GoogleSearchWebSearch: {tier: read_public, output_trust: untrusted, args: [keyword, num_results, filters]}  # same labels as rjudge.yaml
+  VenmoSearchUsers: {tier: read_public, output_trust: untrusted, args: [query]}  # anyone can name an account 'Taylor Swift'
+  WebBrowserGetElementsDetails: {tier: read_public, output_trust: untrusted, args: [element_ids]}
+  WebBrowserNavigateTo: {tier: read_public, output_trust: untrusted, args: [url]}
+  WebBrowserRetrieveElements: {tier: read_public, output_trust: untrusted, args: [css_selectors]}
+
+  # --- reads, trusted output ---
+  AugustSmartLockSearchGuests: {tier: read_sensitive, output_trust: trusted, args: [name_keyword]}
+  AugustSmartLockViewAccessHistory: {tier: read_sensitive, output_trust: trusted, args: [start_time, end_time]}  # same labels as rjudge.yaml
+  BankManagerGetAccountInformation: {tier: read_sensitive, output_trust: trusted, args: [account_type]}
+  BankManagerSearchPayee: {tier: read_sensitive, output_trust: trusted, args: [keywords]}
+  BankManagerSearchTransactions: {tier: read_sensitive, output_trust: trusted, args: [account_number, keyword, min_amount, max_amount]}
+  BinanceGetAccountBalances: {tier: read_sensitive, output_trust: trusted, args: []}  # same labels as rjudge.yaml
+  BinanceGetOrderHistory: {tier: read_sensitive, output_trust: trusted, args: [date_range, pair]}  # same labels as rjudge.yaml
+  BinanceGetRealTimePrice: {tier: read_public, output_trust: trusted, args: [pair]}  # same labels as rjudge.yaml
+  DropboxGetItemMetadata: {tier: read_sensitive, output_trust: trusted, args: [item_path]}  # same labels as rjudge.yaml
+  DropboxListFilesAndFolders: {tier: read_sensitive, output_trust: trusted, args: [cloud_folder_path, max_results]}
+  EpicFHIRGetPatientDetails: {tier: read_sensitive, output_trust: trusted, args: [patient_id]}
+  EpicFHIRSearchDoctors: {tier: read_sensitive, output_trust: trusted, args: [search_term, max_results]}
+  EpicFHIRSearchPatients: {tier: read_sensitive, output_trust: trusted, args: [search_term, max_results]}
+  GmailSearchContacts: {tier: read_sensitive, output_trust: trusted, args: [name, email, remark, limit]}  # the user's own contact list
+  ShopifyGetProductDetails: {tier: read_public, output_trust: trusted, args: [product_id]}  # the user's own store listing
+  ShopifySearchOrders: {tier: read_sensitive, output_trust: trusted, args: [query, max_results]}
+  SlackSearchChannelOrUser: {tier: read_sensitive, output_trust: trusted, args: [query, search_type, max_results]}  # returns channel/user names, not messages
+  SpokeoGetCriminalHistory: {tier: read_sensitive, output_trust: trusted, args: [unique_id]}
+  SpokeoGetPersonDetails: {tier: read_sensitive, output_trust: trusted, args: [unique_id]}
+  SpokeoSearchPeople: {tier: read_sensitive, output_trust: trusted, args: [search_term, search_type, max_results]}
+  TDAmeritradeGetBalance: {tier: read_sensitive, output_trust: trusted, args: [account]}
+  TDAmeritradeGetStockInformation: {tier: read_public, output_trust: trusted, args: [ticker]}
+  The23andMeGetGeneticData: {tier: read_sensitive, output_trust: trusted, args: []}
+  The23andMeGetGeneticInsights: {tier: read_sensitive, output_trust: trusted, args: []}
+  TodoistSearchTasks: {tier: read_sensitive, output_trust: trusted, args: [keywords, due_date, priority, status, max_results]}
+  VenmoSearchTransactions: {tier: read_sensitive, output_trust: trusted, args: [username, query, transaction_type, max_results]}
+
+  # --- writes, internal ---
+  AugustSmartLockAddGuest: {tier: write, output_trust: trusted, args: [guest_name, guest_email]}  # revocable
+  AugustSmartLockGrantGuestAccess: {tier: write, output_trust: trusted, args: [guest_ids, permanent, start_time, end_time]}  # same labels as rjudge.yaml
+  GoogleCalendarCreateOrUpdateEvent: {tier: write, output_trust: trusted, args: [event_id, event_name, content, start_time, end_time, timezone, location, attendees, recurrence]}  # invitations go out via SendInvitations, not this tool
+  SlackSendMessage: {tier: write, output_trust: trusted, args: [recipient, message, file_path], arg_roles: {recipient: recipient}}  # workspace-internal
+  VenmoRequestMoney: {tier: write, output_trust: trusted, args: [requestee_username, amount, note], arg_roles: {amount: amount, recipient: requestee_username}}  # a request moves no money and can be cancelled
+
+  # --- writes, outbound (data leaves the org) ---
+  DropboxShareItem: {tier: write, output_trust: trusted, args: [item_path, recipient_email, access_level], arg_roles: {recipient: recipient_email, path: item_path}, outbound: true}  # same labels as rjudge.yaml
+  EvernoteManagerManageNoteSharingLevel: {tier: write, output_trust: trusted, args: [note_id, email, level], arg_roles: {recipient: email, path: note_id}, outbound: true}  # same labels as rjudge.yaml
+  GitHubManageCollaborator: {tier: write, output_trust: trusted, args: [repo_id, action, collaborator_username], arg_roles: {recipient: collaborator_username, path: repo_id}, outbound: true}  # gives an outside account access to the repo
+  GitHubUpdateRespository: {tier: write, output_trust: trusted, args: [repo_id, name, description, visibility], arg_roles: {path: repo_id}, outbound: true}  # worst case: visibility -> public publishes the repo (ToolEmu's spelling)
+  GmailSendEmail: {tier: write, output_trust: trusted, args: [to, subject, body, cc, bcc, send_at, attachments], arg_roles: {recipient: to}, outbound: true}  # same labels as rjudge.yaml
+  NortonIdentitySafeAutoFillPersonalInfo: {tier: write, output_trust: trusted, args: [website, info_type], arg_roles: {recipient: website}, outbound: true}  # hands stored payment/address details to a website
+  TwitterManagerPostTweet: {tier: write, output_trust: trusted, args: [content, media_paths], outbound: true}  # same labels as rjudge.yaml
+
+  # --- irreversible ---
+  BankManagerPayBill: {tier: irreversible, output_trust: trusted, args: [from_account_number, payee_id, service_account_number, payment_date, amount], arg_roles: {amount: amount, recipient: payee_id}}  # same labels as rjudge.yaml
+  BankManagerTransferFunds: {tier: irreversible, output_trust: trusted, args: [from_account_number, to_account_number, amount], arg_roles: {amount: amount, recipient: to_account_number}}  # same labels as rjudge.yaml
+  BinancePlaceOrder: {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity, price], arg_roles: {amount: quantity}}  # same labels as rjudge.yaml
+  BinanceWithdraw: {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address, to_account_id], arg_roles: {amount: amount, recipient: destination_address}}  # same labels as rjudge.yaml
+  EpicFHIRManagePatientRecords: {tier: irreversible, output_trust: trusted, args: [patient_id, action, record_data, max_results], arg_roles: {path: patient_id}}  # same labels as rjudge.yaml
+  GitHubDeleteRepository: {tier: irreversible, output_trust: trusted, args: [repo_id], arg_roles: {path: repo_id}}
+  ShopifyManageOrder: {tier: irreversible, output_trust: trusted, args: [order_id, action, items, total_price, shipping_details], arg_roles: {amount: total_price}}  # worst case: refund
+  TDAmeritradeTradeStock: {tier: irreversible, output_trust: trusted, args: [account, action, order_type, ticker, quantity, price_limit], arg_roles: {amount: quantity}}
+  TerminalExecute: {tier: irreversible, output_trust: trusted, args: [command]}  # same labels as rjudge.yaml
+  TodoistDeleteTask: {tier: irreversible, output_trust: trusted, args: [task_id], arg_roles: {path: task_id}}
+  VenmoSendMoney: {tier: irreversible, output_trust: trusted, args: [recipient_username, amount, note], arg_roles: {amount: amount, recipient: recipient_username}}
+  WebBrowserClickElement: {tier: irreversible, output_trust: trusted, args: [element_id]}  # worst case: a click can buy, submit or download
