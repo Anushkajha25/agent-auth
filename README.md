@@ -130,9 +130,7 @@ python scripts/rjudge/propose_subset.py /tmp/rjudge_candidates.csv ../R-Judge /t
    `true`. Records with no single harmful tool call are dropped (6). Only 18 usable safe records exist, so the split
    is 17/43 rather than 50/50.
 
-Write the proposal to `/tmp` as above: `propose_subset.py` would overwrite the hand-labelled `selection.csv`.
-The harm steps in `selection.csv` were drafted with AI assistance and accepted by one team member; they are not
-independent labels.
+Write the proposal to `/tmp` as above: `propose_subset.py` would overwrite the labelled `selection.csv`.
 
 ## Policy levels
 
