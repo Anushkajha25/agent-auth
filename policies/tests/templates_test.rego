@@ -129,3 +129,61 @@ test_public_field_write_denied_after_sensitive_and_untrusted if {
 test_private_field_write_allowed_after_sensitive_and_untrusted if {
 	context_attr.allow with input as note({"status": "resolved"}, tainted_with_sensitive)
 }
+
+# --- review fixes: empty lists and packed recipient strings ---
+
+test_empty_recipient_list_denied if {
+	inp := ext("BankManagerTransferFunds", "irreversible", {"to_account_number": [], "amount": 5}, {"recipient": "to_account_number", "amount": "amount"}, false, [])
+	attr.decision == {"allow": false, "reasons": ["payee_not_approved"]} with input as inp
+}
+
+test_empty_amount_list_denied if {
+	inp := ext("BankManagerTransferFunds", "irreversible", {"to_account_number": "ACCT-VENDOR-01", "amount": []}, {"recipient": "to_account_number", "amount": "amount"}, false, [])
+	attr.decision == {"allow": false, "reasons": ["amount_over_limit"]} with input as inp
+}
+
+test_empty_path_list_denied if {
+	inp := ext("DeleteUsers", "irreversible", {"users": []}, {"path": "users"}, false, [])
+	not attr.allow with input as inp
+}
+
+test_empty_recipient_list_on_outbound_is_external if {
+	not context_attr.allow with input as sms([], tainted_with_sensitive)
+}
+
+test_several_addresses_in_one_string_is_external if {
+	not context_attr.allow with input as share("attacker@evil.example, team@acme.example", tainted_with_sensitive)
+	not context_attr.allow with input as share("attacker@evil.example;team@acme.example", tainted_with_sensitive)
+	not context_attr.allow with input as share("attacker@evil.example team@acme.example", tainted_with_sensitive)
+}
+
+test_display_name_or_double_at_is_external if {
+	not context_attr.allow with input as share("Team <team@acme.example>", tainted_with_sensitive)
+	not context_attr.allow with input as share("x@evil.example@acme.example", tainted_with_sensitive)
+}
+
+test_plain_internal_address_still_internal if {
+	context_attr.allow with input as share("team@acme.example", tainted_with_sensitive)
+}
+
+# --- tier ablation: relabelling outbound tools as irreversible must not misapply payment/delete rules ---
+
+test_irreversible_email_is_not_payee_checked if {
+	inp := ext("GmailSendEmail", "irreversible", {"to": "x@evil.example", "subject": "s", "body": "b", "attachments": []}, {"recipient": "to"}, true, [])
+	attr.allow with input as inp
+}
+
+test_irreversible_share_is_not_delete_path_checked if {
+	inp := ext("DropboxShareItem", "irreversible", {"item_path": "/MyBook/Chapter1", "recipient_email": "x@evil.example", "access_level": "view"}, {"recipient": "recipient_email", "path": "item_path"}, true, [])
+	attr.allow with input as inp
+}
+
+test_irreversible_outbound_still_caught_by_outbound_rule if {
+	inp := ext("GmailSendEmail", "irreversible", {"to": "x@evil.example", "subject": "s", "body": "b", "attachments": []}, {"recipient": "to"}, true, tainted_with_sensitive)
+	context_attr.decision == {"allow": false, "reasons": ["outbound_after_untrusted"]} with input as inp
+}
+
+test_payment_without_recipient_role_only_amount_checked if {
+	inp := ext("BinanceDeposit", "irreversible", {"currency": "USD", "amount": 50, "from_account_id": "a"}, {"amount": "amount"}, false, [])
+	attr.allow with input as inp
+}

@@ -55,7 +55,9 @@ The shared conditions live in `policies/lib/lib.rego`:
 | `payee_not_approved` | An `irreversible` action whose `recipient` argument (any value, if it is a list) is not in `approved_payees`, or is missing |
 | `amount_over_limit` | An `irreversible` action whose `amount` argument is above `max_transfer`, is not a number, or is missing |
 | `delete_path_not_allowed` | An `irreversible` action whose `path` argument is not a string, contains `..`, is outside `safe_delete_prefixes`, or is missing |
-| `outbound_external` | An `outbound` action with no recipient, or a recipient outside `@internal_email_domain`; or a `write` that sets a field listed in `public_fields` |
+| `outbound_external` | An `outbound` action with no recipient, or a recipient that is not exactly one plain address in `@internal_email_domain` (several addresses in one string, or a display name, count as external); or a `write` that sets a field listed in `public_fields` |
+
+A role argument that is missing or an empty list counts as failing the check, so an empty list can't skip it.
 
 **These are templates, not tool rules.** None of them names a tool. They read the tier, `arg_roles` and `outbound`
 from the registry, so `BankManagerTransferFunds` (R-Judge) is checked exactly like our `transfer_funds` once its

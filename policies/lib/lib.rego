@@ -54,6 +54,11 @@ role_missing(r) if {
 	not arg in object.keys(input.action.args)
 }
 
+# An empty list gives the rules nothing to check, so it counts as missing too.
+role_missing(r) if {
+	input.action.args[input.action.arg_roles[r]] == []
+}
+
 # The values passed for a role. A list (e.g. several recipients) counts as several values.
 role_values(r) := as_list(input.action.args[input.action.arg_roles[r]])
 
@@ -61,14 +66,22 @@ as_list(v) := v if is_array(v)
 
 as_list(v) := [v] if not is_array(v)
 
-# Irreversible action to a recipient that is not on the approved list.
-payee_not_approved if {
+# A payment: an irreversible action that moves an amount. Only payments are checked against
+# approved_payees; an irreversible email has a recipient but no amount, and an email address
+# is not a payee.
+moves_money if {
 	input.action.tier == "irreversible"
+	has_role("amount")
+}
+
+# A payment to a recipient that is not on the approved list.
+payee_not_approved if {
+	moves_money
 	role_missing("recipient")
 }
 
 payee_not_approved if {
-	input.action.tier == "irreversible"
+	moves_money
 	some v in role_values("recipient")
 	not v in data.config.approved_payees
 }
@@ -93,14 +106,21 @@ amount_over_limit if {
 	v > data.config.max_transfer
 }
 
-# Irreversible action on a path outside the safe prefixes.
-delete_path_not_allowed if {
+# A destructive action on a path: irreversible and not outbound. Sharing a file is
+# outbound, and the outbound rule covers it; its path is not a deletion target.
+destroys_path if {
 	input.action.tier == "irreversible"
+	not input.action.outbound
+}
+
+# A destructive action on a path outside the safe prefixes.
+delete_path_not_allowed if {
+	destroys_path
 	role_missing("path")
 }
 
 delete_path_not_allowed if {
-	input.action.tier == "irreversible"
+	destroys_path
 	some v in role_values("path")
 	not safe_delete_path(v)
 }
@@ -136,8 +156,13 @@ outbound_external if {
 	writes_public_field
 }
 
+# Exactly one plain address in the internal domain. A string holding several addresses
+# ("a@evil.example, b@acme.example") or a display name ("Bob <b@acme.example>") is not
+# trusted as internal, even if it ends with the internal domain.
 internal_address(v) if {
 	is_string(v)
+	count(split(v, "@")) == 2
+	not regex.match(`[\s,;<>"]`, v)
 	endswith(v, concat("", ["@", data.config.internal_email_domain]))
 }
 
