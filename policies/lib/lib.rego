@@ -112,7 +112,37 @@ amount_over_limit if {
 	input.action.tier == "irreversible"
 	some v in role_values("amount")
 	is_number(v)
-	v > data.config.max_transfer
+	not amount_limit
+}
+
+amount_over_limit if {
+	input.action.tier == "irreversible"
+	some v in role_values("amount")
+	is_number(v)
+	v > amount_limit
+}
+
+# The unit of the action's amount: from the call's currency argument when the tool has a
+# currency role (e.g. a crypto withdrawal names its coin), else the tool's registry unit, else
+# USD. A currency role with a missing or non-string value gives "unknown", which has no limit.
+amount_unit := upper(v) if {
+	arg := input.action.arg_roles.currency
+	v := input.action.args[arg]
+	is_string(v)
+} else := "unknown" if {
+	input.action.arg_roles.currency
+} else := u if {
+	u := input.action.amount_unit
+} else := "USD"
+
+# max_transfer is in USD. Other units only have a limit if data.config.amount_limits names one;
+# otherwise there is none, and amount_over_limit treats that as over (fail closed), so 2.5 BTC
+# is never compared with a dollar figure.
+amount_limit := data.config.max_transfer if amount_unit == "USD"
+
+amount_limit := object.get(object.get(data.config, "amount_limits", {}), amount_unit, null) if {
+	amount_unit != "USD"
+	object.get(object.get(data.config, "amount_limits", {}), amount_unit, null) != null
 }
 
 # A destructive action on a path: irreversible and not outbound. Sharing a file is

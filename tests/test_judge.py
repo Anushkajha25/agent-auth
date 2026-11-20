@@ -41,7 +41,8 @@ def test_judge_sees_policy_context_and_request(registry):
     doc = json.loads(call["messages"][0]["content"].split("\n", 1)[1])
     assert doc["request"]["action"]["tool"] == "transfer_funds"
     assert doc["policy_context"]["tools"]["fetch_url"] == {
-        "tier": "read_public", "output_trust": "untrusted", "arg_roles": {}, "outbound": False, "persistent": False}
+        "tier": "read_public", "output_trust": "untrusted", "arg_roles": {}, "outbound": False, "persistent": False,
+        "amount_unit": "USD"}
     # Only the tools in this request are described, not the whole multi-dataset registry.
     assert set(doc["policy_context"]["tools"]) == {"fetch_url", "transfer_funds"}
     assert "ACCT-VENDOR-01" in doc["policy_context"]["config"]["approved_payees"]

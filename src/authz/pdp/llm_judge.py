@@ -59,7 +59,8 @@ class LLMJudgePDP:
         if config is None:
             config = json.loads((POLICIES_DIR / "config" / "data.json").read_text())
         self.tools = {t.name: {"tier": t.tier, "output_trust": t.output_trust, "arg_roles": dict(t.arg_roles),
-                               "outbound": t.outbound, "persistent": t.persistent} for t in registry}
+                               "outbound": t.outbound, "persistent": t.persistent,
+                               "amount_unit": t.amount_unit or "USD"} for t in registry}
         self.config = config
         self.last_reason = ""
         self.input_tokens = 0

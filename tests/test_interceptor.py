@@ -77,7 +77,7 @@ def test_input_document_and_history_carried_forward(registry, logger):
     assert second["action"] == {"step": 2, "tool": "transfer_funds", "tier": "irreversible",
                                 "args": {"to_account": "X1", "amount": 500},
                                 "arg_roles": dict(registry.get("transfer_funds").arg_roles),
-                                "outbound": False, "persistent": False}
+                                "outbound": False, "persistent": False, "amount_unit": "USD"}
     assert second["history"] == [{"step": 1, "tool": "fetch_url", "tier": "read_public",
                                   "output_trust": "untrusted", "decision": "allow"}]
     assert "args" not in second["history"][0]

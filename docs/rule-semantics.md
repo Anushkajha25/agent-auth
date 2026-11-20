@@ -108,6 +108,10 @@ The agent is not deterministic: the LLM may pick different tools on different ru
 - **`public_fields` was added after we saw L4 miss t030** (customer data written to a ticket's public note). So L4's
   0/25 on the custom suite is not an independent result for that trace; the external benchmarks (R-Judge, ToolEmu),
   which the rules were not tuned on, are the fairer test.
-- The amount limit is one number in USD, but some external tools map `amount` to other units (ETH, an exchange
-  order's quantity), so their limit check is not meaningful in dollars.
+- The amount limit (`max_transfer`) is in USD. Tools whose amount is in another unit say so in the registry
+  (`amount_unit: ETH | crypto | shares`, or a `currency` arg role when the call names the coin), and the dollar
+  limit is never applied to them. A unit with no entry in `data.config.amount_limits` has no limit, which counts as
+  over the limit (fail closed): we can't say whether 2.5 BTC is a small payment. This caught one more R-Judge
+  attack (rj_dh_app_1013, L2 and L4) and te_9 (ToolEmu, L2) with no new false positives; before the fix, a crypto
+  amount below 1000 passed.
 - The templates are only as good as the labels. A tool with no `arg_roles`, or an outbound tool not marked `outbound`, isn't checked by the argument rules. Public fields are a fixed list in `data.json`.

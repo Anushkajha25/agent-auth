@@ -62,7 +62,24 @@ def test_optional_keys_parsed(registry):
 def test_optional_keys_default(tmp_path):
     p = write(tmp_path, "t.yaml", "tools:\n  x: {tier: write, output_trust: trusted, args: [a]}\n")
     s = Registry.load(p).get("x")
-    assert (s.arg_roles, s.outbound, s.persistent, s.source) == ({}, False, False, "t")
+    assert (s.arg_roles, s.outbound, s.persistent, s.amount_unit, s.source) == ({}, False, False, "", "t")
+
+
+def test_amount_units_on_non_usd_tools(registry):
+    """Amounts that aren't dollars say so, so the USD limit is never applied to them."""
+    assert registry.get("EthereumManagerTransferEther").amount_unit == "ETH"
+    assert registry.get("BinancePlaceOrder").amount_unit == "crypto"
+    assert registry.get("BinanceWithdraw").arg_roles["currency"] == "currency"
+    assert registry.get("transfer_funds").amount_unit == ""  # USD
+    for spec in registry:
+        if "amount" in spec.arg_roles and spec.amount_unit == "" and "currency" not in spec.arg_roles:
+            assert spec.name in USD_AMOUNT_TOOLS, f"{spec.name}: is its amount in USD? add amount_unit if not"
+
+
+# Tools whose amount argument is in US dollars. A new tool with an amount role must be added
+# here or given an amount_unit / currency role, so the dollar limit is never applied by accident.
+USD_AMOUNT_TOOLS = {"transfer_funds", "BankManagerPayBill", "BankManagerTransferFunds", "VenmoWithdrawMoney",
+                    "VenmoRequestMoney", "VenmoSendMoney", "ShopifyManageOrder"}
 
 
 def test_directory_loads_all_yaml_files_and_camelcase_names(tmp_path):
@@ -90,9 +107,13 @@ def test_same_tool_in_two_files_merges_args_when_labels_agree(tmp_path):
     "{tier: write, output_trust: untrusted, args: [to]}",                              # trust differs
     "{tier: write, output_trust: trusted, args: [to], outbound: true}",                # outbound differs
     "{tier: write, output_trust: trusted, args: [to], arg_roles: {recipient: to}}",    # arg_roles differ
+    "{tier: write, output_trust: trusted, args: [to], arg_roles: {amount: to}, amount_unit: ETH}",  # unit differs
 ])
 def test_rejects_same_tool_with_conflicting_labels(tmp_path, second):
-    write(tmp_path, "a.yaml", "tools:\n  x: {tier: write, output_trust: trusted, args: [to]}\n")
+    first = "{tier: write, output_trust: trusted, args: [to]}"
+    if "amount_unit" in second:
+        first = "{tier: write, output_trust: trusted, args: [to], arg_roles: {amount: to}}"
+    write(tmp_path, "a.yaml", f"tools:\n  x: {first}\n")
     write(tmp_path, "b.yaml", f"tools:\n  x: {second}\n")
     with pytest.raises(RegistryError, match="labels it differently"):
         Registry.load(tmp_path)
@@ -113,6 +134,10 @@ def test_rejects_empty_directory(tmp_path):
     "{tier: write, output_trust: trusted, args: [to], arg_roles: [to]}",           # not a mapping
     "{tier: write, output_trust: trusted, args: [], outbound: yes please}",        # not a bool
     "{tier: write, output_trust: trusted, args: [], persistent: 1}",               # not a bool
+    "{tier: write, output_trust: trusted, args: [a], amount_unit: ETH}",           # unit without amount role
+    "{tier: write, output_trust: trusted, args: [a], arg_roles: {amount: a}, amount_unit: ''}",  # empty unit
+    "{tier: write, output_trust: trusted, args: [a, c], arg_roles: {amount: a, currency: c}, amount_unit: ETH}",  # both
+    "{tier: write, output_trust: trusted, args: [c], arg_roles: {currency: c}}",   # currency without amount
 ])
 def test_rejects_bad_spec(tmp_path, spec):
     p = write(tmp_path, "tools.yaml", f"tools:\n  x: {spec}\n")
