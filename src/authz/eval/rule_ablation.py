@@ -17,22 +17,27 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
-from authz import POLICIES_DIR
 from authz.eval.experiments import BLUE, INK, INK2, ORANGE, style, write_csv
 from authz.eval.replay import load_traces, new_run_id, run
+from authz.rules import ALWAYS_ON, deny_rules, switchable_rules
 
 PDP = "context_attr"
-ALWAYS_ON = ("role_not_permitted", "missing_tier")
 
 
-def optional_rules(policy: Path = POLICIES_DIR / PDP / f"{PDP}.rego") -> list[str]:
-    """L4's switchable rules, in file order (the cumulative order)."""
-    names = re.findall(r'^deny contains "([a-z_]+)"', policy.read_text(), flags=re.M)
-    return [n for n in names if n not in ALWAYS_ON]
+def optional_rules() -> list[str]:
+    """L4's switchable rules (guarded by lib.rule_on), in file order (the cumulative order).
+
+    Fails if L4 has a deny rule that is neither always-on nor switchable: the ablation would
+    otherwise report it as switched off while it stays on.
+    """
+    switchable = switchable_rules(PDP)
+    unguarded = [r for r in deny_rules(PDP) if r not in switchable and r not in ALWAYS_ON]
+    if unguarded:
+        raise ValueError(f"{PDP} rules without lib.rule_on(...): {unguarded}")
+    return switchable
 
 
 def configurations(rules: list[str]) -> list[dict]:

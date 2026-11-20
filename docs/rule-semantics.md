@@ -78,7 +78,9 @@ Each level is a separate Rego package built from the conditions above, so we can
 
 **Why the memory rule.** Taint lasts for one session. An injection that gets the agent to save "always pay X1" into
 memory would come back in a later, clean session as trusted content. Blocking persistent writes once the session is
-tainted stops the injection at the point where it would outlive the session. Because of this, `read_memory` is labelled
+tainted stops the injection at the point where it would outlive the session. This rule looks at the **whole
+session even when `history_window` is set**: a window lets taint expire mid-session, and a delayed injection saved
+to memory would come back as trusted later. Because of this, `read_memory` is labelled
 trusted; the tier ablation measures what changes if it isn't.
 
 **Switching rules for the ablation.** Each of L4's optional rules also requires `lib.rule_on("<reason>")`, which is
@@ -103,4 +105,9 @@ The agent is not deterministic: the LLM may pick different tools on different ru
 - We don't track whether an *argument value* came from untrusted content. L4 relies on fixed allowlists instead, which someone has to maintain.
 - The allowlists belong to one organisation (our fictional Acme). On R-Judge, whose payees and addresses are different, every payment or share after untrusted input is denied, including legitimate ones. We report those false positives rather than adding R-Judge's accounts to the lists.
 - Taint-based rules can't catch harm that happens with no untrusted input before it (R-Judge's "unintended" risk type): the agent makes the mistake on its own.
+- **`public_fields` was added after we saw L4 miss t030** (customer data written to a ticket's public note). So L4's
+  0/25 on the custom suite is not an independent result for that trace; the external benchmarks (R-Judge, ToolEmu),
+  which the rules were not tuned on, are the fairer test.
+- The amount limit is one number in USD, but some external tools map `amount` to other units (ETH, an exchange
+  order's quantity), so their limit check is not meaningful in dollars.
 - The templates are only as good as the labels. A tool with no `arg_roles`, or an outbound tool not marked `outbound`, isn't checked by the argument rules. Public fields are a fixed list in `data.json`.

@@ -29,10 +29,24 @@ test_denied_untrusted_read_does_not_taint if {
 	context_attr.allow with input as remember([read(1, "fetch_url", "untrusted", "deny")])
 }
 
-test_memory_rule_respects_history_window if {
+test_memory_rule_ignores_history_window if {
+	# A delayed injection (m04-style) must not be saved to memory just because the untrusted
+	# read has slid out of the window: memory is read back as trusted in later sessions.
 	h := [read(1, "fetch_url", "untrusted", "allow"), read(2, "read_customer_db", "trusted", "allow"), read(3, "read_customer_db", "trusted", "allow")]
 	not context_attr.allow with input as remember(h)
-	context_attr.allow with input as object.union(remember(h), {"params": {"history_window": 2}})
+	not context_attr.allow with input as object.union(remember(h), {"params": {"history_window": 1}})
+	not context_attr.allow with input as object.union(remember(h), {"params": {"history_window": 2}})
+}
+
+test_window_still_applies_to_non_persistent_rules if {
+	# Only the memory rule ignores the window; the payee rule still uses it.
+	h := [read(1, "fetch_url", "untrusted", "allow"), read(2, "read_customer_db", "trusted", "allow"), read(3, "read_customer_db", "trusted", "allow")]
+	pay := {
+		"session_id": "s-t", "principal": {"role": "finance_assistant"}, "history": h,
+		"params": {"history_window": 2},
+		"action": {"step": 4, "tool": "transfer_funds", "tier": "irreversible", "args": {"to_account": "ACCT-NEW", "amount": 10}, "arg_roles": {"recipient": "to_account", "amount": "amount"}, "outbound": false, "persistent": false},
+	}
+	context_attr.allow with input as pay
 }
 
 test_non_persistent_write_not_affected if {

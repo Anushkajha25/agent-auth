@@ -24,6 +24,7 @@ from authz.log import DecisionLogger, read_log
 from authz.pdp import BACKENDS, LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.opa_sync import PolicyMismatch, verify_opa_policies
 from authz.registry import Registry
+from authz.rules import check_enabled_rules
 from authz.tools.executor import MockToolExecutor
 
 
@@ -72,6 +73,8 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
     if window:
         params["history_window"] = window
     params = params or None
+    if params and "enabled_rules" in params:
+        check_enabled_rules(params["enabled_rules"], pdps)
     traces = load_traces(traces_dir)
     registry = registry or Registry.load()
     run_id = new_run_id()

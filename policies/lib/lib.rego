@@ -34,6 +34,15 @@ tainted if {
 	h.decision == "allow"
 }
 
+# The same, over the whole session, ignoring history_window. Used for writes that outlive the
+# session (agent memory): a window lets taint expire mid-session, but anything persisted now is
+# read back as trusted later, so it must not be laundered by waiting a few steps.
+tainted_session if {
+	some h in input.history
+	h.output_trust == "untrusted"
+	h.decision == "allow"
+}
+
 read_sensitive if {
 	some h in recent
 	h.tier == "read_sensitive"

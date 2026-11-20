@@ -11,13 +11,12 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-from authz import POLICIES_DIR
 from authz.eval.replay import load_traces, new_run_id, run
+from authz.rules import deny_rules
 from authz.log import read_log
 from authz.pdp import LEVELS
 
@@ -36,10 +35,7 @@ INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 
 def rule_count(backend: str) -> int:
     """Number of deny rules in a policy package (0 for noop)."""
-    if backend == "noop":
-        return 0
-    src = (POLICIES_DIR / backend / f"{backend}.rego").read_text()
-    return len(re.findall(r"^deny contains ", src, flags=re.M))
+    return len(deny_rules(backend))
 
 
 def by_category(records: list[dict]) -> dict:

@@ -43,7 +43,7 @@ deny contains "outbound_after_untrusted" if {
 # an injection from outliving it.
 deny contains "persistent_write_after_untrusted" if {
 	lib.rule_on("persistent_write_after_untrusted")
-	lib.tainted
+	lib.tainted_session # whole session, even with a history_window
 	input.action.persistent
 }
 
