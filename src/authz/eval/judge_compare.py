@@ -1,8 +1,13 @@
-"""E4: deterministic Rego policy vs. an LLM judge on the same labeled traces.
+"""E4: deterministic Rego policy vs. probabilistic judges on the same labeled traces.
 
-    python -m authz.eval.judge_compare --provider openai --model gpt-4o-mini --runs 5 --out results/e4
+    python -m authz.eval.judge_compare --provider ollama --model qwen3:8b --runs 5 --out results/e4
+    python -m authz.eval.judge_compare --judge llama_guard --runs 5            # Llama Guard 3 only
+    python -m authz.eval.judge_compare --judge both --provider ollama --model qwen3:8b
 
-1. Replays the traces through the interceptor once with each PDP (the LLM judge, and a
+Judges: `llm` (an instruction-following model as the PDP, needs --provider/--model) and
+`llama_guard` (Llama Guard 3 with custom categories, via Ollama; --guard-model).
+
+1. Replays the traces through the interceptor once with each PDP (the judge(s), and a
    Rego level, L4 by default), logging every decision with its full input.
 2. Re-sends every logged input to the same PDP until it has been asked `--runs` times in
    total, so each PDP answers identical inputs repeatedly (the same idea as
@@ -33,6 +38,7 @@ from authz.interceptor import Interceptor
 from authz.log import DecisionLogger
 from authz.pdp import LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.base import PDP
+from authz.pdp.llama_guard import LlamaGuardPDP
 from authz.pdp.llm_judge import make_llm_judge
 from authz.registry import Registry
 
@@ -128,6 +134,7 @@ def compare(pdps: dict[str, PDP], traces: list[dict], runs: int, out_dir: Path) 
 
 
 def results_md(summary: dict, run_id: str, judge_model: str) -> str:
+    """judge_model: a short description of the judge model(s), for the header line."""
     def span(xs):
         if not xs:
             return "-"
@@ -135,8 +142,8 @@ def results_md(summary: dict, run_id: str, judge_model: str) -> str:
         return f"{lo:.0%}" if lo == hi else f"{lo:.0%}–{hi:.0%}"
 
     f = lambda x: "-" if x is None else f"{x:.1f}"
-    md = ["# E4 results: Rego policy vs. LLM judge", "",
-          f"Run: `{run_id}`. Judge model: `{judge_model}`. Each input was asked {next(iter(summary.values()))['runs']} times.", "",
+    md = ["# E4 results: Rego policy vs. probabilistic judges", "",
+          f"Run: `{run_id}`. Judge model(s): `{judge_model}`. Each input was asked {next(iter(summary.values()))['runs']} times.", "",
           "| PDP | Inputs | Same answer every time | Violation rate (range over runs) | "
           "False positive rate (range over runs) | Latency p50 / p95 (ms) | Errors | Judge tokens in / out |",
           "|---|---|---|---|---|---|---|---|"]
@@ -154,8 +161,10 @@ def results_md(summary: dict, run_id: str, judge_model: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--provider", required=True, choices=list(PROVIDERS))
-    ap.add_argument("--model", required=True, help="exact model ID, e.g. gpt-4o-mini")
+    ap.add_argument("--judge", default="llm", choices=["llm", "llama_guard", "both"])
+    ap.add_argument("--provider", choices=list(PROVIDERS), help="LLM judge provider (needed for --judge llm/both)")
+    ap.add_argument("--model", help="LLM judge model ID, e.g. qwen3:8b (needed for --judge llm/both)")
+    ap.add_argument("--guard-model", default="llama-guard3:8b", help="Ollama model for --judge llama_guard/both")
     ap.add_argument("--runs", type=int, default=5, help="times each input is asked (default 5)")
     ap.add_argument("--compare", default="L4", help="Rego level to compare against (default L4)")
     ap.add_argument("--traces", default="scenarios/custom")
@@ -167,19 +176,30 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--runs must be >= 2")
     if args.compare not in LEVELS:
         ap.error(f"--compare must be one of {', '.join(LEVELS)}")
+    use_llm, use_guard = args.judge in ("llm", "both"), args.judge in ("llama_guard", "both")
+    if use_llm and not (args.provider and args.model):
+        ap.error("--judge llm/both needs --provider and --model")
 
     traces = load_traces(args.traces)[: args.limit]
     steps = sum(len(t["steps"]) for t in traces)
-    print(f"{len(traces)} traces, {steps} steps: about {steps * args.runs} judge calls", file=sys.stderr)
+    n_judges = (args.judge == "both") + 1
+    print(f"{len(traces)} traces, {steps} steps: about {steps * args.runs * n_judges} judge calls", file=sys.stderr)
     if LEVELS[args.compare] != "noop":
         check_opa_policies(resolve_opa_url(args.opa_url))
 
-    pdps = {"llm_judge": make_llm_judge(args.provider, args.model, seed=0),
-            args.compare: make_pdp(args.compare, args.opa_url)}
+    pdps: dict = {}
+    names = []
+    if use_llm:
+        pdps["llm_judge"] = make_llm_judge(args.provider, args.model, seed=0)
+        names.append(f"{args.provider}/{args.model}")
+    if use_guard:
+        pdps["llama_guard"] = LlamaGuardPDP(args.guard_model)
+        names.append(f"ollama/{args.guard_model}")
+    pdps[args.compare] = make_pdp(args.compare, args.opa_url)
     run_id = new_run_id()
     out_dir = Path(args.out) / run_id
     summary = compare(pdps, traces, args.runs, out_dir)
-    md = results_md(summary, run_id, f"{args.provider}/{args.model}")
+    md = results_md(summary, run_id, ", ".join(names))
     (out_dir / "results.md").write_text(md)
     print(md)
     print(f"wrote {out_dir}")

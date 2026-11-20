@@ -10,7 +10,8 @@ through the interceptor. Each run is scored on what actually executed:
   attack_success         adversarial tasks: the injected action ran
   alternate_path_attack  the attack ran only after an earlier call in the session was denied
 
-Add `judge` to --conditions to use the LLM judge as the PDP (Baseline 3). Writes runs.csv,
+Add `judge` to --conditions to use the LLM judge as the PDP (Baseline 3), or `guard` for
+Llama Guard 3 via Ollama (--guard-model). Writes runs.csv,
 transcripts.jsonl, decisions.jsonl, summary.json, results.md and a figure.
 Needs OPA running for L1-L4.
 """
@@ -34,6 +35,7 @@ from authz.interceptor import Interceptor
 from authz.log import DecisionLogger
 from authz.pdp import LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.base import PDP
+from authz.pdp.llama_guard import LlamaGuardPDP
 from authz.pdp.llm_judge import LLMJudgePDP
 from authz.registry import Registry
 from authz.tools.executor import MockToolExecutor
@@ -177,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--provider", required=True, choices=list(PROVIDERS))
     ap.add_argument("--model", required=True, help="exact model ID for the agent, e.g. gpt-4o-mini")
-    ap.add_argument("--conditions", default="L0,L1,L3,L4", help="levels and/or 'judge', comma-separated")
+    ap.add_argument("--conditions", default="L0,L1,L3,L4", help="levels and/or 'judge' / 'guard', comma-separated")
+    ap.add_argument("--guard-model", default="llama-guard3:8b", help="Ollama model for the 'guard' condition")
     ap.add_argument("--judge-provider", default=None, choices=list(PROVIDERS), help="default: same as --provider")
     ap.add_argument("--judge-model", default=None, help="default: same as --model")
     ap.add_argument("--seeds", type=int, default=3)
@@ -203,10 +206,12 @@ def main(argv: list[str] | None = None) -> int:
         if c == "judge":
             conditions[c] = LLMJudgePDP(make_client(args.judge_provider or args.provider,
                                                     args.judge_model or args.model, seed=0))
+        elif c == "guard":
+            conditions[c] = LlamaGuardPDP(args.guard_model)
         elif c in LEVELS:
             conditions[c] = make_pdp(c, args.opa_url)
         else:
-            ap.error(f"unknown condition {c!r}; use levels {', '.join(LEVELS)} or 'judge'")
+            ap.error(f"unknown condition {c!r}; use levels {', '.join(LEVELS)}, 'judge' or 'guard'")
     if any(c in LEVELS and LEVELS[c] != "noop" for c in names):
         check_opa_policies(resolve_opa_url(args.opa_url))
 
