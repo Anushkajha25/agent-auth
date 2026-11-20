@@ -11,13 +11,12 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-from authz import POLICIES_DIR
 from authz.eval.replay import load_traces, new_run_id, run
+from authz.rules import deny_rules
 from authz.log import read_log
 from authz.pdp import LEVELS
 
@@ -25,8 +24,9 @@ LEVEL_OF = {v: k for k, v in LEVELS.items()}
 WINDOWS = [1, 2, 3, 4, 5, 6, 8, None]  # None = whole session
 WINDOW_PDPS = ["context", "context_attr"]
 
-ATTACKS = ["role_violation", "inject_irreversible", "inject_exfil", "delayed_injection", "long_session"]
-BENIGN = ["benign_trusted", "benign_untrusted", "long_session"]
+ATTACKS = ["role_violation", "inject_irreversible", "inject_exfil", "delayed_injection", "long_session",
+           "inject_memory", "external_unsafe"]
+BENIGN = ["benign_trusted", "benign_untrusted", "long_session", "external_safe"]
 
 # Colors: reference categorical slots 1 and 2, plus text/grid inks.
 BLUE, ORANGE = "#2a78d6", "#eb6834"
@@ -35,10 +35,7 @@ INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 
 def rule_count(backend: str) -> int:
     """Number of deny rules in a policy package (0 for noop)."""
-    if backend == "noop":
-        return 0
-    src = (POLICIES_DIR / backend / f"{backend}.rego").read_text()
-    return len(re.findall(r"^deny contains ", src, flags=re.M))
+    return len(deny_rules(backend))
 
 
 def by_category(records: list[dict]) -> dict:

@@ -81,3 +81,23 @@ def test_interceptor_treats_tools_missing_from_executor_as_unknown(registry, log
     out = ic.handle(SessionHistory("s", {"role": "finance_assistant"}), "search_web", {"query": "q"})
     assert out == Denied(("unknown_tool",))
     assert pdp.calls == []
+
+
+def test_stub_tools_accept_any_args_and_are_recorded():
+    ex = MockToolExecutor(stub_tools=["GmailSendEmail"])
+    assert ex.has("GmailSendEmail") and ex.has("fetch_url") and not ex.has("Nope")
+    assert ex.execute("GmailSendEmail", {"raw": "??"}, session_id="s") == "GmailSendEmail: ok (stub)"
+    assert [(c.tool, c.args) for c in ex.calls] == [("GmailSendEmail", {"raw": "??"})]
+
+
+def test_stubs_do_not_relax_mock_arg_checks():
+    ex = MockToolExecutor(stub_tools=["GmailSendEmail"])
+    with pytest.raises(ToolExecutionError):
+        ex.execute("fetch_url", {"wrong": 1}, session_id="s")
+
+
+def test_for_registry_stubs_only_tools_without_mocks(registry):
+    ex = MockToolExecutor.for_registry(registry)
+    assert ex.stub_tools == {n for n in registry.names() if n not in mock_tools.TOOLS}
+    assert not ex.stub_tools & set(mock_tools.TOOLS)
+    assert not MockToolExecutor().stub_tools

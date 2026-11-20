@@ -8,8 +8,11 @@
   "properties": {
     "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
     "category": {"enum": ["benign_trusted", "benign_untrusted", "inject_irreversible", "inject_exfil",
-                          "role_violation", "delayed_injection", "long_session"]},
+                          "role_violation", "delayed_injection", "long_session", "inject_memory",
+                          "external_safe", "external_unsafe"]},
     "description": {"type": "string"},
+    "source": {"type": "string", "minLength": 1, "description": "Where the trace came from, e.g. rjudge or toolemu. Omitted for our own traces."},
+    "risk_type": {"type": "string", "minLength": 1, "description": "The source dataset's risk/attack type, e.g. injection or unintended."},
     "label": {"enum": ["benign", "adversarial"]},
     "principal": {
       "type": "object",

@@ -64,7 +64,12 @@ class Interceptor:
         input_doc = {
             "session_id": history.session_id,
             "principal": dict(history.principal),
-            "action": {"step": step, "tool": tool_name, "tier": tier, "args": args},
+            "action": {"step": step, "tool": tool_name, "tier": tier, "args": args,
+                       # From the registry, never from the agent: which arg is the recipient,
+                       # amount or path, and whether the tool sends data out or persists state.
+                       "arg_roles": dict(spec.arg_roles) if spec else {},
+                       "outbound": spec.outbound if spec else False,
+                       "persistent": spec.persistent if spec else False},
             "history": history.as_policy_input(),
         }
         if self.params:

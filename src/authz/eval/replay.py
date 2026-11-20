@@ -24,6 +24,8 @@ from authz.log import DecisionLogger, read_log
 from authz.pdp import BACKENDS, LEVELS, make_pdp, opa_url as resolve_opa_url
 from authz.pdp.opa_sync import PolicyMismatch, verify_opa_policies
 from authz.registry import Registry
+from authz.rules import check_enabled_rules
+from authz.tools.executor import MockToolExecutor
 
 
 def load_traces(traces_dir: str | Path) -> list[dict]:
@@ -57,11 +59,24 @@ def new_run_id() -> str:
 
 def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
         opa_url: str | None = None, validate_input: bool = False,
-        window: int | None = None) -> tuple[Path, dict]:
+        window: int | None = None, params: dict | None = None, registry: Registry | None = None,
+        log_extra: dict | None = None) -> tuple[Path, dict]:
+    """Replay every trace under each PDP.
+
+    params     extra policy params (e.g. {"enabled_rules": [...]} for the rule ablation),
+               merged with history_window when a window is given
+    registry   tool labels to use instead of registry/ (the tier ablation passes variants)
+    log_extra  fields added to every decision-log record (e.g. the ablation variant)
+    """
     pdps = [LEVELS.get(p, p) for p in pdps]
-    params = {"history_window": window} if window else None
+    params = dict(params or {})
+    if window:
+        params["history_window"] = window
+    params = params or None
+    if params and "enabled_rules" in params:
+        check_enabled_rules(params["enabled_rules"], pdps)
     traces = load_traces(traces_dir)
-    registry = Registry.load()
+    registry = registry or Registry.load()
     run_id = new_run_id()
     run_dir = Path(out_dir) / run_id
     policy_hash = policy_sha256(POLICIES_DIR)
@@ -72,13 +87,15 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
         for pdp_name in pdps:
             pdp = make_pdp(pdp_name, opa_url)
             interceptor = Interceptor(registry, pdp, logger, validate_input=validate_input,
-                                      params=params)
+                                      params=params,
+                                      executor=MockToolExecutor.for_registry(registry))
             for trace in traces:
                 history = SessionHistory(f"{pdp_name}-{trace['id']}", trace["principal"])
                 for step in trace["steps"]:
                     # Every step runs, whatever earlier steps decided.
                     interceptor.handle(history, step["tool"], step["args"],
-                                       log_extra={"trace_id": trace["id"],
+                                       log_extra={**(log_extra or {}),
+                                                  "trace_id": trace["id"],
                                                   "label": trace["label"],
                                                   "category": trace["category"],
                                                   "should_allow": step["should_allow"]})
@@ -86,7 +103,7 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
 
     summary = metrics.compute(records)
     out = {"run_id": run_id, "policy_sha256": policy_hash, "traces": len(traces),
-           "history_window": window, "pdps": summary}
+           "history_window": window, "params": params, "pdps": summary}
     (run_dir / "summary.json").write_text(json.dumps(out, indent=2) + "\n")
     return run_dir, out
 

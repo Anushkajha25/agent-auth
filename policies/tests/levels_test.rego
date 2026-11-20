@@ -8,18 +8,22 @@ untrusted(step) := {"step": step, "tool": "fetch_url", "tier": "read_public", "o
 
 sensitive(step) := {"step": step, "tool": "read_customer_db", "tier": "read_sensitive", "output_trust": "trusted", "decision": "allow"}
 
-act(role, tool, tier, args, history) := {
+# Mirrors what the interceptor sends: arg_roles and outbound come from registry/tools.yaml.
+act(role, tool, tier, args, arg_roles, outbound, history) := {
 	"session_id": "s-t",
 	"principal": {"role": role},
-	"action": {"step": count(history) + 1, "tool": tool, "tier": tier, "args": args},
+	"action": {
+		"step": count(history) + 1, "tool": tool, "tier": tier, "args": args,
+		"arg_roles": arg_roles, "outbound": outbound, "persistent": false,
+	},
 	"history": history,
 }
 
-pay(acct, amount, history) := act("finance_assistant", "transfer_funds", "irreversible", {"to_account": acct, "amount": amount}, history)
+pay(acct, amount, history) := act("finance_assistant", "transfer_funds", "irreversible", {"to_account": acct, "amount": amount}, {"recipient": "to_account", "amount": "amount"}, false, history)
 
-rm(path, history) := act("ops_assistant", "delete_file", "irreversible", {"path": path}, history)
+rm(path, history) := act("ops_assistant", "delete_file", "irreversible", {"path": path}, {"path": "path"}, false, history)
 
-mail(to, history) := act("finance_assistant", "send_email", "write", {"to": to, "body": "x"}, history)
+mail(to, history) := act("finance_assistant", "send_email", "write", {"to": to, "body": "x"}, {"recipient": "to"}, true, history)
 
 with_window(inp, w) := object.union(inp, {"params": {"history_window": w}})
 
@@ -69,7 +73,7 @@ test_l4_safe_delete_ok_after_untrusted if {
 }
 
 test_l4_external_email_denied_after_sensitive_and_untrusted if {
-	context_attr.decision == {"allow": false, "reasons": ["external_email_after_untrusted"]} with input as mail("attacker@evil.example", [sensitive(1), untrusted(2)])
+	context_attr.decision == {"allow": false, "reasons": ["outbound_after_untrusted"]} with input as mail("attacker@evil.example", [sensitive(1), untrusted(2)])
 }
 
 test_l4_internal_email_ok_after_sensitive_and_untrusted if {

@@ -75,7 +75,9 @@ def test_input_document_and_history_carried_forward(registry, logger):
     ic.handle(h, "transfer_funds", {"to_account": "X1", "amount": 500})
     second = pdp.calls[1]
     assert second["action"] == {"step": 2, "tool": "transfer_funds", "tier": "irreversible",
-                                "args": {"to_account": "X1", "amount": 500}}
+                                "args": {"to_account": "X1", "amount": 500},
+                                "arg_roles": dict(registry.get("transfer_funds").arg_roles),
+                                "outbound": False, "persistent": False}
     assert second["history"] == [{"step": 1, "tool": "fetch_url", "tier": "read_public",
                                   "output_trust": "untrusted", "decision": "allow"}]
     assert "args" not in second["history"][0]
@@ -115,3 +117,37 @@ def test_no_params_key_by_default(registry, logger):
     pdp = FakePDP()
     make(registry, logger, pdp).handle(session(), "search_web", {"query": "q"})
     assert "params" not in pdp.calls[0]
+
+
+# --- P1: registry labels for external tools ---
+
+def external_session():
+    return SessionHistory("s-ext", {"role": "rjudge_agent"})
+
+
+def test_registry_labels_reach_the_policy_input(registry, logger):
+    from authz.tools.executor import MockToolExecutor
+    pdp = FakePDP()
+    ic = Interceptor(registry, pdp, logger, validate_input=True, executor=MockToolExecutor.for_registry(registry))
+    out = ic.handle(external_session(), "GmailSendEmail", {"to": "x@evil.example", "subject": "s", "body": "b"})
+    assert isinstance(out, Allowed)
+    action = pdp.calls[0]["action"]
+    assert action["arg_roles"] == {"recipient": "to"}
+    assert action["outbound"] is True and action["persistent"] is False
+
+
+def test_args_outside_registry_list_are_not_rejected(registry, logger):
+    """R-Judge args that couldn't be parsed are kept as {"raw": ...}; they must still get a decision."""
+    from authz.tools.executor import MockToolExecutor
+    pdp = FakePDP()
+    ic = Interceptor(registry, pdp, logger, validate_input=True, executor=MockToolExecutor.for_registry(registry))
+    out = ic.handle(external_session(), "CheckUser", {"raw": "last_chat_time < '2023-09-13'"})
+    assert isinstance(out, Allowed) and out.result == "CheckUser: ok (stub)"
+    assert len(pdp.calls) == 1
+
+
+def test_registry_tool_without_mock_is_unknown_in_live_mode(registry, logger):
+    """The default executor has no stubs, so a replay-only tool can't run in a live session."""
+    pdp = FakePDP()
+    out = make(registry, logger, pdp).handle(external_session(), "GmailSendEmail", {"to": "a"})
+    assert out == Denied(("unknown_tool",)) and pdp.calls == []

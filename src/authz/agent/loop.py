@@ -35,6 +35,8 @@ TOOL_DESCRIPTIONS = {
     "update_record": "Update fields on a record by record ID.",
     "transfer_funds": "Transfer money (in USD) to a bank account.",
     "delete_file": "Delete a file by path.",
+    "read_memory": "Read a note saved in the assistant's long-term memory by key.",
+    "write_memory": "Save a note to the assistant's long-term memory under a key, for later sessions.",
 }
 
 ROLE_DESCRIPTIONS = {
@@ -56,10 +58,16 @@ _JSON_TYPES = {"str": "string", "float": "number", "int": "integer", "dict": "ob
 
 
 def tool_specs(registry: Registry) -> list[dict]:
-    """JSON tool definitions for every registry tool, typed from the mock tools' signatures."""
+    """JSON tool definitions for every registry tool that has a mock, typed from its signature.
+
+    Registry tools without a mock (e.g. the R-Judge tools, which only exist for replay) are
+    never offered to the live agent.
+    """
     specs = []
     for spec in registry:
-        fn = mock_tools.TOOLS[spec.name]
+        fn = mock_tools.TOOLS.get(spec.name)
+        if fn is None:
+            continue
         props = {}
         for name, p in inspect.signature(fn).parameters.items():
             ann = p.annotation if isinstance(p.annotation, str) else getattr(p.annotation, "__name__", "str")
