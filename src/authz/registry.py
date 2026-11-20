@@ -1,7 +1,10 @@
 """Tool registry: the single source of truth for tool labels.
 
 `Registry.load()` reads every *.yaml file in registry/ (tools.yaml for our own tools,
-rjudge.yaml for the R-Judge subset, ...). A tool may be defined in only one file.
+rjudge.yaml for the R-Judge subset, toolemu.yaml for ToolEmu, ...). Benchmarks share tools
+(e.g. GmailSendEmail is in R-Judge and ToolEmu), so a tool may appear in several files as
+long as its labels (tier, output_trust, arg_roles, outbound, persistent) agree; its args are
+merged. Conflicting labels are an error. `source` is the first file (in sorted order).
 
 Each tool needs tier, output_trust and args. Optional keys:
   arg_roles   which argument plays a role the policies care about, e.g. {recipient: to}.
@@ -85,6 +88,19 @@ def _registry_files(path: Path) -> list[Path]:
     return [path]
 
 
+LABEL_FIELDS = ("tier", "output_trust", "arg_roles", "outbound", "persistent")
+
+
+def _merge(old: ToolSpec, new: ToolSpec, filename: str) -> ToolSpec:
+    """The same tool from a second registry file: labels must match; args are unioned."""
+    diffs = [f for f in LABEL_FIELDS if getattr(old, f) != getattr(new, f)]
+    if diffs:
+        raise RegistryError(f"{old.name}: {filename} labels it differently from {old.source}.yaml "
+                            f"({', '.join(f'{d}: {getattr(old, d)!r} vs {getattr(new, d)!r}' for d in diffs)})")
+    args = old.args + tuple(a for a in new.args if a not in old.args)
+    return replace(old, args=args)
+
+
 class Registry:
     def __init__(self, tools: dict[str, ToolSpec]):
         self._tools = dict(tools)
@@ -98,9 +114,8 @@ class Registry:
             if not isinstance(raw, dict) or not isinstance(raw.get("tools"), dict):
                 raise RegistryError(f"{f}: expected a top-level 'tools' mapping")
             for name, spec in raw["tools"].items():
-                if name in tools:
-                    raise RegistryError(f"{name}: defined in both {tools[name].source}.yaml and {f.name}")
-                tools[name] = _parse_tool(name, spec, f.stem)
+                new = _parse_tool(name, spec, f.stem)
+                tools[name] = _merge(tools[name], new, f.name) if name in tools else new
         return cls(tools)
 
     def with_overrides(self, overrides: dict[str, dict]) -> "Registry":

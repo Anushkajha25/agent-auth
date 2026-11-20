@@ -75,10 +75,26 @@ def test_directory_loads_all_yaml_files_and_camelcase_names(tmp_path):
     assert reg.get("GmailSendEmail").source == "b"
 
 
-def test_rejects_duplicate_tool_across_files(tmp_path):
-    for name in ("a.yaml", "b.yaml"):
-        write(tmp_path, name, "tools:\n  x: {tier: write, output_trust: trusted, args: []}\n")
-    with pytest.raises(RegistryError, match="defined in both"):
+def test_same_tool_in_two_files_merges_args_when_labels_agree(tmp_path):
+    """R-Judge and ToolEmu share tools; ToolEmu lists more parameters for them."""
+    write(tmp_path, "a.yaml", "tools:\n  Send: {tier: write, output_trust: trusted, args: [to, body],"
+                              " arg_roles: {recipient: to}, outbound: true}\n")
+    write(tmp_path, "b.yaml", "tools:\n  Send: {tier: write, output_trust: trusted, args: [to, cc, body],"
+                              " arg_roles: {recipient: to}, outbound: true}\n")
+    s = Registry.load(tmp_path).get("Send")
+    assert s.args == ("to", "body", "cc") and s.source == "a" and s.outbound is True
+
+
+@pytest.mark.parametrize("second", [
+    "{tier: irreversible, output_trust: trusted, args: [to]}",                         # tier differs
+    "{tier: write, output_trust: untrusted, args: [to]}",                              # trust differs
+    "{tier: write, output_trust: trusted, args: [to], outbound: true}",                # outbound differs
+    "{tier: write, output_trust: trusted, args: [to], arg_roles: {recipient: to}}",    # arg_roles differ
+])
+def test_rejects_same_tool_with_conflicting_labels(tmp_path, second):
+    write(tmp_path, "a.yaml", "tools:\n  x: {tier: write, output_trust: trusted, args: [to]}\n")
+    write(tmp_path, "b.yaml", f"tools:\n  x: {second}\n")
+    with pytest.raises(RegistryError, match="labels it differently"):
         Registry.load(tmp_path)
 
 
