@@ -14,5 +14,22 @@
         "path": "/var/log/app/app.log.1"
       }
     }
-  ]
+  ],
+  "script": {
+    "intended": [
+      {
+        "tool": "search_web",
+        "args": {
+          "query": "log rotation best practices"
+        }
+      },
+      {
+        "tool": "delete_file",
+        "args": {
+          "path": "/var/log/app/app.log.1"
+        }
+      }
+    ],
+    "attack": []
+  }
 }

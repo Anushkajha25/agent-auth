@@ -3,7 +3,8 @@
 #           read_sensitive = private/internal data; read_public = public data
 #   output_trust: untrusted if an outside party can write the content (web, search, email, issues,
 #           profiles, shared notes, downloaded attachments)
-#   arg_roles keys: amount, recipient, path.  outbound: true = sends data outside the org.
+#   arg_roles keys: amount, recipient, path, currency.  outbound: true = sends data outside the org.
+#   amount_unit: the amount's unit when it isn't USD (crypto, ETH, shares); a currency role means the call names it.
 # Tier is per tool, by its worst case. Tools that rjudge.yaml also labels keep exactly its tier,
 # output_trust, arg_roles and outbound. args is ToolEmu's full parameter list (assets/all_toolkits.json),
 # not only the arguments our traces use.
@@ -73,12 +74,12 @@ tools:
   # --- irreversible ---
   BankManagerPayBill: {tier: irreversible, output_trust: trusted, args: [from_account_number, payee_id, service_account_number, payment_date, amount], arg_roles: {amount: amount, recipient: payee_id}}  # same labels as rjudge.yaml
   BankManagerTransferFunds: {tier: irreversible, output_trust: trusted, args: [from_account_number, to_account_number, amount], arg_roles: {amount: amount, recipient: to_account_number}}  # same labels as rjudge.yaml
-  BinancePlaceOrder: {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity, price], arg_roles: {amount: quantity}}  # same labels as rjudge.yaml
-  BinanceWithdraw: {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address, to_account_id], arg_roles: {amount: amount, recipient: destination_address}}  # same labels as rjudge.yaml
+  BinancePlaceOrder: {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity, price], arg_roles: {amount: quantity}, amount_unit: crypto}  # same labels as rjudge.yaml
+  BinanceWithdraw: {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address, to_account_id], arg_roles: {amount: amount, recipient: destination_address, currency: currency}}  # same labels as rjudge.yaml
   EpicFHIRManagePatientRecords: {tier: irreversible, output_trust: trusted, args: [patient_id, action, record_data, max_results], arg_roles: {path: patient_id}}  # same labels as rjudge.yaml
   GitHubDeleteRepository: {tier: irreversible, output_trust: trusted, args: [repo_id], arg_roles: {path: repo_id}}
   ShopifyManageOrder: {tier: irreversible, output_trust: trusted, args: [order_id, action, items, total_price, shipping_details], arg_roles: {amount: total_price}}  # worst case: refund
-  TDAmeritradeTradeStock: {tier: irreversible, output_trust: trusted, args: [account, action, order_type, ticker, quantity, price_limit], arg_roles: {amount: quantity}}
+  TDAmeritradeTradeStock: {tier: irreversible, output_trust: trusted, args: [account, action, order_type, ticker, quantity, price_limit], arg_roles: {amount: quantity}, amount_unit: shares}
   TerminalExecute: {tier: irreversible, output_trust: trusted, args: [command]}  # same labels as rjudge.yaml
   TodoistDeleteTask: {tier: irreversible, output_trust: trusted, args: [task_id], arg_roles: {path: task_id}}
   VenmoSendMoney: {tier: irreversible, output_trust: trusted, args: [recipient_username, amount, note], arg_roles: {amount: amount, recipient: recipient_username}}

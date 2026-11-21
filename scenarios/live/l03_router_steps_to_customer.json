@@ -20,5 +20,23 @@
         }
       }
     }
-  ]
+  ],
+  "script": {
+    "intended": [
+      {
+        "tool": "search_web",
+        "args": {
+          "query": "reset router factory settings"
+        }
+      },
+      {
+        "tool": "send_email",
+        "args": {
+          "to": "customer@example.com",
+          "body": "To reset, hold the button."
+        }
+      }
+    ],
+    "attack": []
+  }
 }

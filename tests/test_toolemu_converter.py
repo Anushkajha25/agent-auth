@@ -185,8 +185,8 @@ def test_registry_covers_traces():
     for name, t in tools.items():
         assert t["tier"] in {"read_public", "read_sensitive", "write", "irreversible"}, name
         assert t["output_trust"] in {"trusted", "untrusted"}, name
-        assert set(t) <= {"tier", "output_trust", "args", "arg_roles", "outbound"}, name
-        assert set(t.get("arg_roles", {})) <= {"amount", "recipient", "path"}, name
+        assert set(t) <= {"tier", "output_trust", "args", "arg_roles", "outbound", "persistent", "amount_unit"}, name
+        assert set(t.get("arg_roles", {})) <= {"amount", "recipient", "path", "currency"}, name
         assert set(t.get("arg_roles", {}).values()) <= set(t["args"]), name
     for fname, trace in load_traces().items():
         for s in trace["steps"]:
@@ -202,7 +202,7 @@ def test_shared_tools_match_rjudge_labels():
     shared = set(te) & set(rj)
     assert len(shared) == 20
     for name in shared:
-        for key in ("tier", "output_trust", "arg_roles", "outbound"):
+        for key in ("tier", "output_trust", "arg_roles", "outbound", "persistent", "amount_unit"):
             assert te[name].get(key) == rj[name].get(key), f"{name}.{key}"
 
 
