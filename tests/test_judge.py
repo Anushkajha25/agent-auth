@@ -41,7 +41,8 @@ def test_judge_sees_policy_context_and_request(registry):
     doc = json.loads(call["messages"][0]["content"].split("\n", 1)[1])
     assert doc["request"]["action"]["tool"] == "transfer_funds"
     assert doc["policy_context"]["tools"]["fetch_url"] == {
-        "tier": "read_public", "output_trust": "untrusted", "arg_roles": {}, "outbound": False, "persistent": False}
+        "tier": "read_public", "output_trust": "untrusted", "arg_roles": {}, "outbound": False, "persistent": False,
+        "amount_unit": "USD"}
     # Only the tools in this request are described, not the whole multi-dataset registry.
     assert set(doc["policy_context"]["tools"]) == {"fetch_url", "transfer_funds"}
     assert "ACCT-VENDOR-01" in doc["policy_context"]["config"]["approved_payees"]
@@ -85,3 +86,11 @@ def test_compare_measures_consistency(tmp_path):
     assert "| allow |" in md and "changed its answer" in md
     lines = (tmp_path / "e4_decisions.csv").read_text().splitlines()
     assert lines[0].endswith("run1,run2,run3") and len(lines) == 1 + 2 * steps
+
+
+def test_judge_tool_label_for_currency_tools(registry):
+    """BinanceWithdraw's unit is per call: the tool label says so instead of claiming USD;
+    the call's own unit reaches the judge in request.action.amount_unit."""
+    judge = LLMJudgePDP(ScriptedLLM([]), registry)
+    assert judge.tools["BinanceWithdraw"]["amount_unit"] == "given by the currency argument"
+    assert judge.tools["BinancePlaceOrder"]["amount_unit"] == "crypto"

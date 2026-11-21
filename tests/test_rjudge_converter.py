@@ -186,7 +186,7 @@ def test_registry_covers_and_labels_every_tool():
         assert isinstance(t["args"], list), name
         assert isinstance(t.get("outbound", False), bool), name
         for role, arg in t.get("arg_roles", {}).items():
-            assert role in {"amount", "recipient", "path"}, name
+            assert role in {"amount", "recipient", "path", "currency"}, name
             assert arg in t["args"], f"{name}: arg_roles points to unknown arg {arg}"
     used = {s["tool"] for _, t in load_traces() for s in t["steps"]}
     assert used <= set(tools), f"tools missing from registry: {sorted(used - set(tools))}"

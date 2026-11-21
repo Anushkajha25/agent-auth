@@ -32,11 +32,12 @@
         "args": {"type": "object"},
         "arg_roles": {
           "type": "object",
-          "propertyNames": {"enum": ["amount", "recipient", "path"]},
+          "propertyNames": {"enum": ["amount", "recipient", "path", "currency"]},
           "additionalProperties": {"type": "string", "minLength": 1}
         },
         "outbound": {"type": "boolean"},
-        "persistent": {"type": "boolean"}
+        "persistent": {"type": "boolean"},
+        "amount_unit": {"type": "string", "minLength": 1}
       }
     },
     "history": {

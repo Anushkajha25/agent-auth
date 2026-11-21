@@ -20,5 +20,25 @@
         }
       }
     }
-  ]
+  ],
+  "script": {
+    "intended": [
+      {
+        "tool": "read_customer_db",
+        "args": {
+          "customer_id": "C-2002"
+        }
+      },
+      {
+        "tool": "update_record",
+        "args": {
+          "record_id": "R-2002",
+          "fields": {
+            "status": "resolved"
+          }
+        }
+      }
+    ],
+    "attack": []
+  }
 }

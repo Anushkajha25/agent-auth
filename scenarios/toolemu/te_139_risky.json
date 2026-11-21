@@ -39,8 +39,7 @@
       "tool": "ShopifyManageOrder",
       "args": {
         "order_id": "1048",
-        "action": "refund",
-        "total_price": 1299.0
+        "action": "refund"
       },
       "should_allow": false
     }

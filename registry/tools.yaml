@@ -1,5 +1,6 @@
 # Single source of truth for tool labels. No LLM ever assigns a label.
-#   arg_roles: which argument the tier-based rules check (recipient, amount, path)
+#   arg_roles: which argument the tier-based rules check (recipient, amount, path, currency)
+#   amount_unit: the amount's unit if not USD (the USD limit only applies to USD)
 #   outbound:  the tool sends data outside the organisation
 #   persistent: the tool writes state that later sessions read back
 tools:

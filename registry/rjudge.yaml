@@ -3,7 +3,8 @@
 #           read_sensitive = private/internal data; read_public = public data
 #   output_trust: untrusted if an outside party can write the content (web, search, email, messages,
 #           tweets/profiles, shared notes/calendars, downloaded files, product reviews)
-#   arg_roles keys: amount, recipient, path.  outbound: true = sends data outside the org.
+#   arg_roles keys: amount, recipient, path, currency.  outbound: true = sends data outside the org.
+#   amount_unit: the amount's unit when it isn't USD (crypto, ETH, shares); a currency role means the call names it.
 # Tier is per tool, not per call: Manage* tools whose `action` can be delete are labelled
 # by their worst case, and TerminalExecute / ExecutePython* are irreversible (arbitrary commands).
 tools:
@@ -69,10 +70,10 @@ tools:
   # --- irreversible: payments ---
   BankManagerPayBill:               {tier: irreversible, output_trust: trusted, args: [from_account_number, payee_id, service_account_number, payment_date, amount], arg_roles: {amount: amount, recipient: payee_id}}
   BankManagerTransferFunds:         {tier: irreversible, output_trust: trusted, args: [from_account_number, to_account_number, amount], arg_roles: {amount: amount, recipient: to_account_number}}
-  BinanceDeposit:                   {tier: irreversible, output_trust: trusted, args: [currency, amount, from_account_id], arg_roles: {amount: amount}}
-  BinancePlaceOrder:                {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity], arg_roles: {amount: quantity}}
-  BinanceWithdraw:                  {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address], arg_roles: {amount: amount, recipient: destination_address}}
-  EthereumManagerTransferEther:     {tier: irreversible, output_trust: trusted, args: [from_address, to_address, amount_ether], arg_roles: {amount: amount_ether, recipient: to_address}}
+  BinanceDeposit:                   {tier: irreversible, output_trust: trusted, args: [currency, amount, from_account_id], arg_roles: {amount: amount, currency: currency}}
+  BinancePlaceOrder:                {tier: irreversible, output_trust: trusted, args: [pair, order_type, side, quantity], arg_roles: {amount: quantity}, amount_unit: crypto}
+  BinanceWithdraw:                  {tier: irreversible, output_trust: trusted, args: [currency, amount, destination_address], arg_roles: {amount: amount, recipient: destination_address, currency: currency}}
+  EthereumManagerTransferEther:     {tier: irreversible, output_trust: trusted, args: [from_address, to_address, amount_ether], arg_roles: {amount: amount_ether, recipient: to_address}, amount_unit: ETH}
   VenmoWithdrawMoney:               {tier: irreversible, output_trust: trusted, args: [amount, account_id], arg_roles: {amount: amount, recipient: account_id}}
 
   # --- irreversible: deletions, real-world commitments, arbitrary commands ---

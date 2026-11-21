@@ -3,7 +3,7 @@
 `Registry.load()` reads every *.yaml file in registry/ (tools.yaml for our own tools,
 rjudge.yaml for the R-Judge subset, toolemu.yaml for ToolEmu, ...). Benchmarks share tools
 (e.g. GmailSendEmail is in R-Judge and ToolEmu), so a tool may appear in several files as
-long as its labels (tier, output_trust, arg_roles, outbound, persistent) agree; its args are
+long as its labels (tier, output_trust, arg_roles, outbound, persistent, amount_unit) agree; its args are
 merged. Conflicting labels are an error. `source` is the first file (in sorted order).
 
 Each tool needs tier, output_trust and args. Optional keys:
@@ -11,6 +11,8 @@ Each tool needs tier, output_trust and args. Optional keys:
               Roles: amount, recipient, path. Each value must be one of the tool's args.
   outbound    true if the tool sends data outside the organisation
   persistent  true if the tool writes state that later sessions read (e.g. agent memory)
+  amount_unit the unit of the amount argument when it isn't USD, e.g. ETH or shares. Tools whose
+              unit comes from the call itself use a `currency` arg role instead. Default USD.
 """
 
 from __future__ import annotations
@@ -24,10 +26,10 @@ from authz import REGISTRY_DIR
 
 TIERS = ("read_public", "read_sensitive", "write", "irreversible")
 TRUST = ("trusted", "untrusted")
-ARG_ROLES = ("amount", "recipient", "path")
+ARG_ROLES = ("amount", "recipient", "path", "currency")
 
 REQUIRED_KEYS = {"tier", "output_trust", "args"}
-OPTIONAL_KEYS = {"arg_roles", "outbound", "persistent"}
+OPTIONAL_KEYS = {"arg_roles", "outbound", "persistent", "amount_unit"}
 
 
 class RegistryError(ValueError):
@@ -43,7 +45,23 @@ class ToolSpec:
     arg_roles: dict[str, str] = field(default_factory=dict)
     outbound: bool = False
     persistent: bool = False
+    amount_unit: str = ""  # "" means USD
     source: str = ""  # registry file stem, e.g. "tools" or "rjudge"
+
+    def unit_label(self) -> str:
+        """The amount unit for describing the tool when there is no call at hand (judge prompts, history)."""
+        if "currency" in self.arg_roles:
+            return f"given by the {self.arg_roles['currency']} argument"
+        return self.amount_unit or "USD"
+
+    def unit_for(self, args: dict) -> str:
+        """The unit of this call's amount. Mirrors amount_unit in policies/lib/lib.rego, so the judges and
+        the policies see the same unit: the currency argument, upper-cased, when the tool has one ("unknown"
+        if it's missing or not a string), otherwise the registry's amount_unit, otherwise USD."""
+        if "currency" in self.arg_roles:
+            v = args.get(self.arg_roles["currency"])
+            return v.upper() if isinstance(v, str) else "unknown"
+        return self.amount_unit or "USD"
 
 
 def _parse_tool(name: str, spec, source: str) -> ToolSpec:
@@ -71,12 +89,21 @@ def _parse_tool(name: str, spec, source: str) -> ToolSpec:
             raise RegistryError(f"{where}: unknown arg role {role!r}; choose from {ARG_ROLES}")
         if arg not in args:
             raise RegistryError(f"{where}: arg_roles.{role} points to {arg!r}, which is not in args")
+    unit = spec.get("amount_unit", "")
+    if "amount_unit" in spec and (not isinstance(unit, str) or not unit.strip()):
+        raise RegistryError(f"{where}: amount_unit must be a non-empty string")
+    if unit and "amount" not in arg_roles:
+        raise RegistryError(f"{where}: amount_unit needs an amount arg role")
+    if unit and "currency" in arg_roles:
+        raise RegistryError(f"{where}: use either amount_unit or a currency arg role, not both")
+    if "currency" in arg_roles and "amount" not in arg_roles:
+        raise RegistryError(f"{where}: a currency arg role needs an amount arg role")
     for flag in ("outbound", "persistent"):
         if not isinstance(spec.get(flag, False), bool):
             raise RegistryError(f"{where}: {flag} must be true or false")
 
     return ToolSpec(name, spec["tier"], spec["output_trust"], tuple(args), dict(arg_roles),
-                    spec.get("outbound", False), spec.get("persistent", False), source)
+                    spec.get("outbound", False), spec.get("persistent", False), unit, source)
 
 
 def _registry_files(path: Path) -> list[Path]:
@@ -88,7 +115,7 @@ def _registry_files(path: Path) -> list[Path]:
     return [path]
 
 
-LABEL_FIELDS = ("tier", "output_trust", "arg_roles", "outbound", "persistent")
+LABEL_FIELDS = ("tier", "output_trust", "arg_roles", "outbound", "persistent", "amount_unit")
 
 
 def _merge(old: ToolSpec, new: ToolSpec, filename: str) -> ToolSpec:

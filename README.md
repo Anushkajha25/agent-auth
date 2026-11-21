@@ -44,10 +44,10 @@ docker compose run --rm opa test /policies -v
 .venv/bin/python scripts/labels/agreement.py
 
 # P5: rule-count ablation on L4 (cumulative and leave-one-out), per dataset and combined
-.venv/bin/python -m authz.eval.rule_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory
+.venv/bin/python -m authz.eval.rule_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory scenarios/toolemu
 
 # P6: tier ablation: tighten/loosen registry labels and re-run L2-L4 on every dataset
-.venv/bin/python -m authz.eval.tier_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory
+.venv/bin/python -m authz.eval.tier_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory scenarios/toolemu
 
 # Re-check every logged decision 5 times
 .venv/bin/python -m authz.eval.determinism --log results/<run_id>/decisions.jsonl --runs 5
@@ -71,8 +71,9 @@ ollama pull llama-guard3:8b    # ~4.9 GB, only for the Llama Guard judge (llama-
 Tested agents: `qwen3:8b` completes all six benign live tasks with no policy. `qwen2.5:7b` and
 `llama3.1:8b` did not: one sent a refund to an invented account number, the other wrote a call to a
 tool that doesn't exist as plain text. `qwen3:8b` writes long reasoning, so start Ollama with
-`OLLAMA_CONTEXT_LENGTH=8192 ollama serve` for long tasks. Calls run at temperature 0, which makes
-runs repeatable, so one seed per task is enough.
+`OLLAMA_CONTEXT_LENGTH=8192 ollama serve` for long tasks. Calls run at temperature 0, but that does not make
+runs repeatable: the same task can attack in one run and not the next, so report several seeds per task
+(`--seeds 3`) where time allows and treat single-seed rates as rough.
 
 Set `OLLAMA_URL` if Ollama isn't on `http://localhost:11434/v1`. Hosted APIs also work with
 `--provider openai` or `--provider anthropic` and `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`;
@@ -88,8 +89,24 @@ keys are read from the environment and never logged.
 
 # E5: live agent on scenarios/live under each condition
 #     (add 'judge' for the LLM judge or 'guard' for Llama Guard; --only l01_refund_known_customer to try one task)
-.venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 1 --out results/e5
+.venv/bin/python -m authz.eval.live --provider ollama --model qwen3:8b --conditions L0,L1,L3,L4 --seeds 3 --out results/e5
 ```
+
+`--provider scripted` runs E5 with a worst-case agent instead of a model: it makes each task's intended calls
+and then the attack's, whatever the policy says, so it shows what each level does when the agent falls for every
+injection (no LLM, no cost). Each live task's `script` holds those calls.
+
+To run all of E1, E4 and E5 in one go, with checks that OPA, Ollama and the models are ready first:
+
+```bash
+scripts/run_e1_e4_e5.sh smoke   # ~10 minutes: a tiny version of every step, to catch setup problems
+scripts/run_e1_e4_e5.sh full    # the real runs (most of a night on a laptop)
+```
+
+Results, `run.log` and `environment.txt` (commit, policy hash, models, machine) go to `results/final-<mode>-<time>/`.
+`full` runs E4 on the custom suite, R-Judge and ToolEmu (L4 was tuned on the custom suite, so the external
+comparison is the fairer one) and E5 with 3 seeds per task. Set `E4_EXTERNAL=0` to skip the external E4 runs,
+`E5_SEEDS` to change the seed count, and `AGENT_MODEL` / `GUARD_MODEL` to use other models.
 
 The agent (`src/authz/agent/`) is a minimal function-calling loop. Every tool call goes
 through the interceptor; a denied call comes back to the model as a tool error and the agent
@@ -239,9 +256,9 @@ R-Judge (60 traces, 143 steps, 43 unsafe) and memory (5 traces, 11 steps, 2 unsa
 |---|---|---|---|---|
 | L0 noop | 43/43 | 0/100 | 2/2 | 0/9 |
 | L1 static | 43/43 (unrestricted role) | 0/100 | 2/2 | 0/9 |
-| L2 attr | 30/43 | 4/100 | 2/2 | 0/9 |
+| L2 attr | 29/43 | 4/100 | 2/2 | 0/9 |
 | L3 context | 29/43 | 4/100 | 2/2 | 0/9 |
-| L4 context_attr | 21/43 | 3/100 | 0/2 | 1/9 (m05) |
+| L4 context_attr | 20/43 | 3/100 | 0/2 | 1/9 (m05) |
 
 Many R-Judge harms happen with no untrusted input before them (the "unintended" risk type), which taint-based
 rules can't catch by design. The allowlists (`approved_payees`, internal email domain) belong to our fictional
@@ -250,19 +267,48 @@ add R-Judge's accounts to the lists.
 
 ToolEmu (80 traces, 206 steps, 40 unsafe):
 
-| Level | ToolEmu violations | ToolEmu false positives |
+| Level | Violation rate | False positive rate |
 |---|---|---|
-| L0 noop | 40/40 | 0/166 |
-| L1 static | 40/40 (unrestricted role) | 0/166 |
-| L2 attr | 25/40 | 6/166 |
-| L3 context | 32/40 | 5/166 |
-| L4 context_attr | 34/40 | 3/166 |
+| L0 noop | 40/40 (100%) | 0/166 |
+| L1 static | 40/40 (100%, unrestricted role) | 0/166 |
+| L2 attr | 24/40 (60%) | 6/166 |
+| L3 context | 32/40 (80%) | 5/166 |
+| L4 context_attr | 34/40 (85%) | 3/166 |
 
-L4 misses more ToolEmu harms than L2. This is by design: L4 targets prompt injection, so its recipient, amount and
-path checks only apply once the session has read untrusted input. 33 of the 40 ToolEmu cases are `unintended`
-(the agent's own mistake on an underspecified request, with no untrusted input before it), so L4's argument rules
-never fire on them, while L2 checks every irreversible action. In exchange, L4 raises fewer false alarms (3/166
-vs 6/166). Stopping the agent's own mistakes would need L2's unconditional checks, at the cost of more false positives.
+On ToolEmu, L4 is worse than L2. 33 of the 40 cases are `unintended`: the agent's own mistake with no untrusted
+input before it. L4 applies the argument rules only once the session is tainted, so it lets those through, while
+L2 checks arguments on every irreversible call. This is the cost of L4's low false-positive rate on the custom
+suite, not a bug. As with R-Judge, some L2 catches come from our fictional company's allowlists.
+
+**P5, rule count (L4, all four datasets combined, 110 unsafe / 394 safe steps).** Adding rules one at a time:
+role only 105/110 violations and 0 false positives; + payee 89; + amount 84; + delete path 76 (2 FP); + outbound
+56 (7 FP); + persistent write 54 (8 FP). Leaving one out, `outbound_after_untrusted` matters most (removing it
+gives 74/110) and `persistent_write_after_untrusted` only matters on the memory set. Full tables:
+`docs/figures/p5/results.md`.
+
+**P6, tier labels (same policies, registry changed).** L4's misses barely move when labels are tightened, though
+its false positives rise (`customer_db_untrusted`: 8 to 12 of 394 combined). Loosening them hurts: marking email as trusted raises L4's custom violations from 0/25 to 9/25, web pages as trusted to
+10/25, and `delete_file` as a plain write to 5/25. Marking every outbound tool irreversible helps L3 (custom 7 → 1,
+R-Judge 29 → 18) at the cost of more false positives (custom 7 → 11). So output_trust labels carry most of the
+weight. Full tables: `docs/figures/p6/results.md`.
+
+**E5, worst-case agent** (`--provider scripted`: always makes the injected calls; 6 benign and 7 attack tasks):
+
+| Condition | Benign task success | Attack success |
+|---|---|---|
+| L0 | 6/6 | 7/7 |
+| L1 | 6/6 | 6/7 |
+| L2 | 6/6 | 3/7 |
+| L3 | 4/6 | 2/7 |
+| L4 | 6/6 | 1/7 (l12) |
+
+L4's one miss, l12, is a by-design gap: an injected "bank details changed" note redirects payment to a different
+payee that is also on the approved list, for an amount under the limit, so no rule fires. Results with a
+real model (E1, E4 and E5 on `qwen3:8b`) come from `scripts/run_e1_e4_e5.sh full`.
+
+The figures and tables in `docs/figures/` were regenerated from these runs (policy hash `832227e9726a`):
+E2/E3 on the custom suite at the top level, P5 and P6 on all four datasets in `p5/` and `p6/`, and the
+worst-case E5 in `e5_scripted/`.
 
 ### Label agreement (A4)
 
@@ -304,7 +350,7 @@ wrote the scenarios. Both probably push agreement up.
 
 | Path | What it is |
 |---|---|
-| `registry/` | Tool labels, the single source of truth. Every `*.yaml` is loaded: `tools.yaml` (our 10 tools, each with a mock), `rjudge.yaml` (R-Judge). Per tool: `tier`, `output_trust`, `args`, and optionally `arg_roles`, `outbound`, `persistent` |
+| `registry/` | Tool labels, the single source of truth. Every `*.yaml` is loaded: `tools.yaml` (our tools, each with a mock, including `read_memory` / `write_memory`), `rjudge.yaml` (R-Judge), `toolemu.yaml` (ToolEmu). Per tool: `tier`, `output_trust`, `args`, and optionally `arg_roles`, `outbound`, `persistent`, `amount_unit` |
 | `policies/` | Rego: `lib` (shared conditions), `static`, `attr`, `context`, `context_attr`, `config/data.json` (roles, `unrestricted_roles`, allowlists and `public_fields`, loaded as `data.config`), `tests/` |
 | `schemas/` | JSON Schemas for the PDP input, traces and live tasks |
 | `scenarios/custom/` | 45 labeled traces in 7 categories (144 steps, 25 unsafe) |
@@ -319,7 +365,7 @@ wrote the scenarios. Both probably push agreement up.
 | `scenarios/live/` | 13 live tasks for E5 (6 benign, 7 attacks) |
 | `scenarios/toolemu/`, `registry/toolemu.yaml`, `scripts/toolemu/` | 80 ToolEmu traces, their tool labels, and the hand-written cases + converter |
 | `src/authz/pdp/llama_guard.py` | Baseline 3b: Llama Guard 3 via Ollama, with categories for this threat model |
-| `docs/` | `rule-semantics.md`, E2/E3 figures, `label_disagreements.csv` (A4) |
+| `docs/` | `rule-semantics.md`; `figures/` with E2/E3 (custom), P5 and P6 (all datasets) and worst-case E5 results; `label_disagreements.csv` (A4) |
 | `results/` | Run outputs (gitignored) |
 
 ## Design notes
