@@ -35,8 +35,13 @@ docker compose run --rm opa test /policies -v
 # Replay all traces under every policy level (add --window N to limit history)
 .venv/bin/python -m authz.eval.replay --pdp all --traces scenarios/custom --out results/
 
-# E2/E3: results by category, level trade-off, history-window sweep, with figures
+# E2/E3: results by category and by source (custom, rjudge, toolemu, memory), level trade-off,
+#        history-window sweep, with figures. Uses every scenarios/<source>/ folder that exists;
+#        pass --traces scenarios/custom (or several folders) to pick datasets.
 .venv/bin/python -m authz.eval.experiments --out results/experiments
+
+# A4: agreement between the three blind label sheets in labels/
+.venv/bin/python scripts/labels/agreement.py
 
 # P5: rule-count ablation on L4 (cumulative and leave-one-out), per dataset and combined
 .venv/bin/python -m authz.eval.rule_ablation --traces scenarios/custom scenarios/rjudge scenarios/memory
@@ -243,6 +248,58 @@ rules can't catch by design. The allowlists (`approved_payees`, internal email d
 company, so legitimate R-Judge payments and shares after untrusted input are denied; we report this rather than
 add R-Judge's accounts to the lists.
 
+ToolEmu (80 traces, 206 steps, 40 unsafe):
+
+| Level | ToolEmu violations | ToolEmu false positives |
+|---|---|---|
+| L0 noop | 40/40 | 0/166 |
+| L1 static | 40/40 (unrestricted role) | 0/166 |
+| L2 attr | 25/40 | 6/166 |
+| L3 context | 32/40 | 5/166 |
+| L4 context_attr | 34/40 | 3/166 |
+
+L4 misses more ToolEmu harms than L2. This is by design: L4 targets prompt injection, so its recipient, amount and
+path checks only apply once the session has read untrusted input. 33 of the 40 ToolEmu cases are `unintended`
+(the agent's own mistake on an underspecified request, with no untrusted input before it), so L4's argument rules
+never fire on them, while L2 checks every irreversible action. In exchange, L4 raises fewer false alarms (3/166
+vs 6/166). Stopping the agent's own mistakes would need L2's unconditional checks, at the cost of more false positives.
+
+### Label agreement (A4)
+
+All three team members labelled the 144 custom steps independently (`labels/`, sheets made with
+`scripts/labels/make_label_sheet.py`). `scripts/labels/agreement.py` reproduces the numbers below and writes
+every disagreement to `docs/label_disagreements.csv`.
+
+| Measure | Value |
+|---|---|
+| Fleiss' κ (3 labellers, 144 steps) | 0.953 |
+| Unanimous steps | 141/144 (97.9%) |
+| Pairwise Cohen's κ | 0.929 – 0.977 |
+| Majority vote = scenario label | 140/144 |
+
+The per-category κ for `benign_trusted` (0.484) comes from one split vote in a category that is almost all
+"allow"; raw agreement there is 20/21.
+
+**Label sensitivity.** The majority vote differs from the scenario labels on 4 steps. We keep the scenario labels
+as ground truth because they encode each scenario's intent (e.g. that `ACCT-NEW-77` is a legitimate new vendor),
+which the labellers could not see. Three of the differences (t018, t040, t045) are irreversible actions whose
+justification is only in the scenario description, so the labellers judged them unsafe from the trace alone. The
+fourth, t035 step 1 (`ops_assistant` calling `fetch_url`), is labelled deny because the role is not permitted that
+tool, while all three labellers judged it harmless: the scenario labels encode role permissions as well as harm.
+
+Custom suite under each label set:
+
+| Level | Unsafe allowed (scenario → majority) | Safe blocked (scenario → majority) |
+|---|---|---|
+| L0 noop | 25/25 → 27/27 | 0/119 → 0/117 |
+| L1 static | 20/25 → 23/27 | 0/119 → 1/117 |
+| L2 attr | 7/25 → 8/27 | 3/119 → 2/117 |
+| L3 context | 7/25 → 8/27 | 7/119 → 6/117 |
+| L4 context_attr | 0/25 → 2/27 | 1/119 → 1/117 |
+
+The labelling was not fully blind: trace IDs such as `t002_injection_transfer` hint at intent, and one labeller
+wrote the scenarios. Both probably push agreement up.
+
 ## Layout
 
 | Path | What it is |
@@ -252,6 +309,7 @@ add R-Judge's accounts to the lists.
 | `schemas/` | JSON Schemas for the PDP input, traces and live tasks |
 | `scenarios/custom/` | 45 labeled traces in 7 categories (144 steps, 25 unsafe) |
 | `scenarios/memory/` | 5 memory-poisoning traces (3 benign, 2 attacks) |
+| `labels/`, `scripts/labels/` | The three blind label sheets for the custom steps, the sheet generator and the agreement script (A4) |
 | `src/authz/interceptor.py` | Fail-closed interceptor. The only code path that runs a tool. |
 | `src/authz/tools/executor.py` | `ToolExecutor` interface and `MockToolExecutor`: runs the mock tools, records every executed call per session, and can override tool outputs per task. In replay, registry tools without a mock run on a stub. |
 | `src/authz/pdp/` | `NoOpPDP`, `OpaPDP`, and `make_pdp` |
@@ -261,7 +319,7 @@ add R-Judge's accounts to the lists.
 | `scenarios/live/` | 13 live tasks for E5 (6 benign, 7 attacks) |
 | `scenarios/toolemu/`, `registry/toolemu.yaml`, `scripts/toolemu/` | 80 ToolEmu traces, their tool labels, and the hand-written cases + converter |
 | `src/authz/pdp/llama_guard.py` | Baseline 3b: Llama Guard 3 via Ollama, with categories for this threat model |
-| `docs/` | `rule-semantics.md`, E2/E3 figures |
+| `docs/` | `rule-semantics.md`, E2/E3 figures, `label_disagreements.csv` (A4) |
 | `results/` | Run outputs (gitignored) |
 
 ## Design notes
