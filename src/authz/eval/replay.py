@@ -1,6 +1,6 @@
 """Replay labeled traces through the interceptor under one or more PDP backends.
 
-    python -m authz.eval.replay --pdp all --traces scenarios/custom --out results/ [--window N]
+    python -m authz.eval.replay --pdp all --traces scenarios/custom [scenarios/rjudge ...] --out results/ [--window N]
 """
 
 from __future__ import annotations
@@ -28,19 +28,30 @@ from authz.rules import check_enabled_rules
 from authz.tools.executor import MockToolExecutor
 
 
-def load_traces(traces_dir: str | Path) -> list[dict]:
+def load_traces(traces_dirs: str | Path | list[str | Path]) -> list[dict]:
+    """Load and validate every *.json trace in one or more folders.
+
+    A trace without a "source" field gets its folder's name as its source
+    (scenarios/custom -> custom, scenarios/memory -> memory).
+    """
+    if isinstance(traces_dirs, (str, Path)):
+        traces_dirs = [traces_dirs]
     schema = json.loads((SCHEMAS_DIR / "trace.schema.json").read_text())
     validator = jsonschema.Draft202012Validator(schema)
     traces = []
-    for p in sorted(Path(traces_dir).glob("*.json")):
-        trace = json.loads(p.read_text())
-        validator.validate(trace)
-        traces.append(trace)
-    if not traces:
-        raise SystemExit(f"no traces found in {traces_dir}")
+    for d in traces_dirs:
+        files = sorted(Path(d).glob("*.json"))
+        if not files:
+            raise SystemExit(f"no traces found in {d}")
+        for p in files:
+            trace = json.loads(p.read_text())
+            validator.validate(trace)
+            trace.setdefault("source", Path(d).resolve().name)
+            traces.append(trace)
     ids = [t["id"] for t in traces]
-    if len(ids) != len(set(ids)):
-        raise SystemExit(f"duplicate trace ids in {traces_dir}")
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    if dupes:
+        raise SystemExit(f"duplicate trace ids: {', '.join(dupes)}")
     return traces
 
 
@@ -57,12 +68,13 @@ def new_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(3)
 
 
-def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
+def run(pdps: list[str], traces_dir: str | Path | list[str | Path], out_dir: str | Path,
         opa_url: str | None = None, validate_input: bool = False,
         window: int | None = None, params: dict | None = None, registry: Registry | None = None,
         log_extra: dict | None = None) -> tuple[Path, dict]:
     """Replay every trace under each PDP.
 
+    traces_dir one folder or a list of folders (see load_traces)
     params     extra policy params (e.g. {"enabled_rules": [...]} for the rule ablation),
                merged with history_window when a window is given
     registry   tool labels to use instead of registry/ (the tier ablation passes variants)
@@ -98,6 +110,7 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
                                                   "trace_id": trace["id"],
                                                   "label": trace["label"],
                                                   "category": trace["category"],
+                                                  "source": trace.get("source", "custom"),
                                                   "should_allow": step["should_allow"]})
         records = logger.records
 
@@ -111,7 +124,8 @@ def run(pdps: list[str], traces_dir: str | Path, out_dir: str | Path,
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pdp", choices=[*BACKENDS, *LEVELS, "all"], default="all")
-    ap.add_argument("--traces", default="scenarios/custom")
+    ap.add_argument("--traces", nargs="+", default=["scenarios/custom"],
+                    help="one or more trace folders")
     ap.add_argument("--out", default="results/")
     ap.add_argument("--opa-url", default=None, help="default: $OPA_URL or http://localhost:8181")
     ap.add_argument("--validate-input", action="store_true", help="validate each PDP input against the schema")

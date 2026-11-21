@@ -1,6 +1,8 @@
-"""E2 (detection by attack category) and E3 (policy level and history window trade-offs).
+"""E2 (detection by attack category) and E3 (policy level and history window trade-offs),
+overall and separately for each trace source (custom, rjudge, toolemu, memory).
 
     python -m authz.eval.experiments --out results/experiments
+    python -m authz.eval.experiments --traces scenarios/custom      # one dataset only
 
 Writes CSVs, PNG figures and a results.md summary into results/experiments/<run_id>/.
 Needs OPA running (docker compose up -d).
@@ -12,7 +14,7 @@ import argparse
 import csv
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from authz.eval.replay import load_traces, new_run_id, run
@@ -23,6 +25,9 @@ from authz.pdp import LEVELS
 LEVEL_OF = {v: k for k, v in LEVELS.items()}
 WINDOWS = [1, 2, 3, 4, 5, 6, 8, None]  # None = whole session
 WINDOW_PDPS = ["context", "context_attr"]
+
+SOURCES = ["custom", "rjudge", "toolemu", "memory"]  # report order; other sources go after, sorted
+DEFAULT_TRACES = [f"scenarios/{s}" for s in SOURCES]
 
 ATTACKS = ["role_violation", "inject_irreversible", "inject_exfil", "delayed_injection", "long_session",
            "inject_memory", "external_unsafe"]
@@ -38,11 +43,11 @@ def rule_count(backend: str) -> int:
     return len(deny_rules(backend))
 
 
-def by_category(records: list[dict]) -> dict:
-    """{pdp: {category: {"unsafe": n, "allowed_unsafe": n, "safe": n, "blocked_safe": n}}}"""
+def tally(records: list[dict], key) -> dict:
+    """{pdp: {key(record): {"unsafe": n, "allowed_unsafe": n, "safe": n, "blocked_safe": n}}}"""
     out: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     for r in records:
-        c = out[r["pdp"]][r["category"]]
+        c = out[r["pdp"]][key(r)]
         if r["should_allow"]:
             c["safe"] += 1
             c["blocked_safe"] += not r["allow"]
@@ -50,6 +55,32 @@ def by_category(records: list[dict]) -> dict:
             c["unsafe"] += 1
             c["allowed_unsafe"] += r["allow"]
     return out
+
+
+def by_category(records: list[dict]) -> dict:
+    return tally(records, lambda r: r["category"])
+
+
+def by_source(records: list[dict]) -> dict:
+    return tally(records, lambda r: r.get("source", "custom"))
+
+
+def source_order(found) -> list[str]:
+    found = set(found)
+    return [s for s in SOURCES if s in found] + sorted(found - set(SOURCES))
+
+
+def rate(n: int, total: int) -> float | None:
+    return n / total if total else None
+
+
+def frac(n: int, total: int) -> str:
+    """'3/40 (8%)' for the markdown tables, '-' when there is nothing to count."""
+    return f"{n}/{total} ({n / total:.0%})" if total else "-"
+
+
+def _round(x: float | None) -> float | str:
+    return "" if x is None else round(x, 4)
 
 
 def write_csv(path: Path, header: list[str], rows: list[list]) -> None:
@@ -139,22 +170,28 @@ def plot_window(rows: list[dict], path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--traces", default="scenarios/custom")
+    ap.add_argument("--traces", nargs="+", default=None,
+                    help="trace folders (default: whichever of " + ", ".join(DEFAULT_TRACES) + " exist)")
     ap.add_argument("--out", default="results/experiments")
     ap.add_argument("--opa-url", default=None)
     ap.add_argument("--no-plots", action="store_true")
     args = ap.parse_args(argv)
+    if args.traces is None:
+        args.traces = [d for d in DEFAULT_TRACES if Path(d).is_dir()]
 
     out_dir = Path(args.out) / new_run_id()
     runs_dir = out_dir / "runs"
     out_dir.mkdir(parents=True)
     pdps = list(LEVELS.values())
-    load_traces(args.traces)  # fail early on a bad trace
+    traces = load_traces(args.traces)  # fail early on a bad trace
+    per_source = Counter(t["source"] for t in traces)
+    sources = source_order(per_source)
 
     # E2 + E3a: every level, whole-session history
     run_dir, summary = run(pdps, args.traces, runs_dir, args.opa_url, validate_input=True)
     records = read_log(run_dir / "decisions.jsonl")
     cats = by_category(records)
+    srcs = by_source(records)
 
     e2_rows = []
     for p in pdps:
@@ -163,6 +200,17 @@ def main(argv: list[str] | None = None) -> int:
             e2_rows.append([LEVEL_OF[p], p, c, d["allowed_unsafe"], d["unsafe"], d["blocked_safe"], d["safe"]])
     write_csv(out_dir / "e2_by_category.csv",
               ["level", "pdp", "category", "unsafe_allowed", "unsafe_total", "safe_blocked", "safe_total"], e2_rows)
+
+    src_rows = []
+    for p in pdps:
+        for s in sources:
+            d = srcs[p][s]
+            src_rows.append([s, per_source[s], LEVEL_OF[p], p, d["allowed_unsafe"], d["unsafe"],
+                             d["blocked_safe"], d["safe"]])
+    write_csv(out_dir / "e2_by_source.csv",
+              ["source", "traces", "level", "pdp", "unsafe_allowed", "unsafe_total", "violation_rate",
+               "safe_blocked", "safe_total", "false_positive_rate"],
+              [r[:6] + [_round(rate(r[4], r[5]))] + r[6:] + [_round(rate(r[6], r[7]))] for r in src_rows])
 
     points = []
     for p in pdps:
@@ -180,9 +228,17 @@ def main(argv: list[str] | None = None) -> int:
                 q["false_pos"], q["safe"], round(q["fpr"], 4), q["p50_ms"]] for q in points])
 
     # E3b: history window sweep for the two taint-based levels
-    window_rows = []
+    window_rows, window_src_rows = [], []
     for w in WINDOWS:
-        _, s = run(WINDOW_PDPS, args.traces, runs_dir, args.opa_url, window=w)
+        w_dir, s = run(WINDOW_PDPS, args.traces, runs_dir, args.opa_url, window=w)
+        w_srcs = by_source(read_log(w_dir / "decisions.jsonl"))
+        for p in WINDOW_PDPS:
+            for src in sources:
+                d = w_srcs[p][src]
+                window_src_rows.append({"pdp": p, "window": w, "source": src,
+                                        **{k: d[k] for k in ("unsafe", "allowed_unsafe", "safe", "blocked_safe")},
+                                        "vr": rate(d["allowed_unsafe"], d["unsafe"]),
+                                        "fpr": rate(d["blocked_safe"], d["safe"])})
         for p in WINDOW_PDPS:
             m = s["pdps"][p]
             window_rows.append({"pdp": p, "window": w, "vr": m["violation_rate"]["rate"],
@@ -192,6 +248,12 @@ def main(argv: list[str] | None = None) -> int:
               ["level", "pdp", "history_window", "violation_rate", "false_positive_rate", "missed", "blocked"],
               [[LEVEL_OF[r["pdp"]], r["pdp"], r["window"] or "all", round(r["vr"], 4), round(r["fpr"], 4),
                 " ".join(r["missed"]), " ".join(r["blocked"])] for r in window_rows])
+    write_csv(out_dir / "e3_window_by_source.csv",
+              ["source", "level", "pdp", "history_window", "unsafe_allowed", "unsafe_total", "violation_rate",
+               "safe_blocked", "safe_total", "false_positive_rate"],
+              [[r["source"], LEVEL_OF[r["pdp"]], r["pdp"], r["window"] or "all", r["allowed_unsafe"],
+                r["unsafe"], _round(r["vr"]), r["blocked_safe"], r["safe"], _round(r["fpr"])]
+               for r in window_src_rows])
 
     if not args.no_plots:
         attack_cats = [c for c in ATTACKS if any(cats[p][c]["unsafe"] for p in pdps)]
@@ -200,20 +262,41 @@ def main(argv: list[str] | None = None) -> int:
                               "E2: Unsafe actions allowed, by attack category", out_dir / "e2_attacks.png")
         plot_category_heatmap(cats, pdps, benign_cats, "blocked_safe", "safe",
                               "E2: Safe actions blocked, by scenario category", out_dir / "e2_benign.png")
+        plot_category_heatmap(srcs, pdps, sources, "allowed_unsafe", "unsafe",
+                              "E2: Unsafe actions allowed, by trace source", out_dir / "e2_sources_unsafe.png")
+        plot_category_heatmap(srcs, pdps, sources, "blocked_safe", "safe",
+                              "E2: Safe actions blocked, by trace source", out_dir / "e2_sources_safe.png")
         plot_tradeoff(points, out_dir / "e3_levels.png")
         plot_window(window_rows, out_dir / "e3_window.png")
 
     md = ["# E2/E3 results", "", f"Run: `{out_dir.name}`, policy_sha256 `{summary['policy_sha256'][:12]}`",
-          "", "## Policy levels (whole-session history)", "",
+          f"Traces: {len(traces)} ({', '.join(f'{s} {per_source[s]}' for s in sources)}) "
+          f"from {', '.join(f'`{d}`' for d in args.traces)}",
+          "", "## Policy levels (whole-session history, all sources)", "",
           "| Level | PDP | Deny rules | Unsafe allowed | Safe blocked | p50 ms | Missed | Blocked |",
           "|---|---|---|---|---|---|---|---|"]
     for q in points:
         md.append(f"| {q['level']} | {q['pdp']} | {q['rules']} | {q['violations']}/{q['unsafe']} | "
                   f"{q['false_pos']}/{q['safe']} | {q['p50_ms']:.3f} | "
                   f"{', '.join(q['missed']) if q['pdp'] != 'noop' else 'all'} | {', '.join(q['blocked']) or '-'} |")
-    md += ["", "## History window", "", "| Level | Window | Violation rate | False positive rate |", "|---|---|---|---|"]
+    md += ["", "## By source (whole-session history)", "",
+           "Unsafe allowed = violation rate, safe blocked = false positive rate, counted per step.", "",
+           "| Source | Traces | Level | PDP | Unsafe allowed | Safe blocked |", "|---|---|---|---|---|---|"]
+    for r in sorted(src_rows, key=lambda r: sources.index(r[0])):
+        md.append(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {frac(r[4], r[5])} | {frac(r[6], r[7])} |")
+    md += ["", "## History window (all sources)", "",
+           "| Level | Window | Violation rate | False positive rate |", "|---|---|---|---|"]
     for r in window_rows:
         md.append(f"| {LEVEL_OF[r['pdp']]} | {r['window'] or 'all'} | {r['vr']:.0%} | {r['fpr']:.1%} |")
+    wlabels = [str(w) if w else "all" for w in WINDOWS]
+    md += ["", "## History window, by source", "",
+           "| Source | Level | Metric | " + " | ".join(wlabels) + " |", "|---|---|---|" + "---|" * len(WINDOWS)]
+    for src in sources:
+        for p in WINDOW_PDPS:
+            rows = {r["window"]: r for r in window_src_rows if r["source"] == src and r["pdp"] == p}
+            for metric, key in [("Violation rate", "vr"), ("False positive rate", "fpr")]:
+                cells = ["-" if rows[w][key] is None else f"{rows[w][key]:.0%}" for w in WINDOWS]
+                md.append(f"| {src} | {LEVEL_OF[p]} | {metric} | " + " | ".join(cells) + " |")
     (out_dir / "results.md").write_text("\n".join(md) + "\n")
     (out_dir / "levels.json").write_text(json.dumps(points, indent=2) + "\n")
 
