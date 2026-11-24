@@ -1,12 +1,52 @@
 # Agent Auth
 
-Context-aware authorization for LLM agent tool calls. Every tool call goes through an
-interceptor, which asks a policy decision point (PDP) to allow or deny it. The decision can
-depend on the session history as well as the agent's role.
+**Deterministic, context-aware authorization for LLM agent tool calls.**
+
+An LLM agent that reads an email, a web page or a GitHub issue can be prompt-injected into
+sending money, deleting files or leaking data. Agent Auth puts a fail-closed interceptor in
+front of every tool call and asks an OPA/Rego policy engine to allow or deny it. The decision
+depends on the agent's role, the call's arguments **and the session history** (for example,
+"no irreversible action after untrusted input"). The same input always gives the same
+decision, unlike an LLM judging another LLM.
 
 ```
-labeled traces → interceptor → PDP (L0–L4) → JSONL decision log → metrics
+agent / labeled traces → interceptor → PDP (L0–L4, OPA/Rego) → tool runs or is denied → JSONL decision log → metrics
 ```
+
+> Built as a CSE 598 team project (ASU, Fall 2026) with **Pranav Manjunath Bhat** and
+> **Anushka Priya**. Commit history is preserved, so each author's work is visible.
+> **My work:** the tool-calling agent loop and LLM clients (Ollama, OpenAI, Anthropic), the
+> `ToolExecutor` layer, the LLM-judge and Llama Guard 3 baselines, the E1/E4/E5 experiments,
+> the scripted worst-case agent and the ToolEmu dataset. Work after Nov 21, 2026 is my own
+> extension of the project.
+
+## Key results
+
+| What | Result |
+|---|---|
+| Custom suite (45 traces, 144 steps, 25 unsafe) | L4 policy lets through **0/25** unsafe steps, with **1/119** false positives |
+| Worst-case agent (always follows every injection) | Attack success drops from **7/7** (no policy) to **1/7** (L4); all **6/6** benign tasks still complete |
+| Human labels | Fleiss' κ = **0.953** across 3 independent labellers on 144 steps |
+| Determinism | A built-in check re-runs every logged decision and confirms it is unchanged, tied to an input hash and a policy hash |
+| Tests | 231 Python tests plus Rego unit tests |
+
+**Known limits, reported rather than hidden.** On outside benchmarks the L4 policy lets more
+harms through: 20/43 on R-Judge and 34/40 on ToolEmu. Most of those harms are the agent's
+own mistakes with no untrusted input before them, and L4's taint rules don't fire on those by
+design. On ToolEmu, the simpler L2 policy (24/40) does better. Details are in
+[Expected results](#expected-results).
+
+## Contents
+
+- [Pinned versions](#pinned-versions) · [Setup](#setup) · [Commands](#commands)
+- [Live agent and system experiments (E1, E4, E5)](#live-agent-and-system-experiments-e1-e4-e5)
+- [R-Judge dataset](#r-judge-dataset) · [ToolEmu dataset](#toolemu-dataset)
+- [Policy levels](#policy-levels) · [Expected results](#expected-results) · [Layout](#layout) · [Design notes](#design-notes)
+
+## Tech stack
+
+Python 3.11+ · Open Policy Agent (Rego v1) · Docker · Ollama (qwen3:8b, Llama Guard 3) ·
+OpenAI / Anthropic APIs (optional) · JSON Schema · pytest
 
 ## Pinned versions
 
@@ -375,7 +415,3 @@ wrote the scenarios. Both probably push agreement up.
 - **Reproducibility.** Each log line records `input_sha256`, which is a hash of canonical JSON, and `policy_sha256`, which hashes every `.rego` file plus `config/data.json`. The determinism check refuses to run if the policies have changed since the log was written.
 - **OPA policy check.** OPA runs with `--watch`. Before using OPA, `replay` and `determinism` check that OPA has the same policies and data as the files on disk, and stop if they don't. This keeps `policy_sha256` in the log accurate.
 - **No non-deterministic built-ins.** A pytest test fails if any `.rego` file uses `http.send`, `time.*`, `rand.*`, `uuid.*`, `net.*` or `opa.runtime`.
-
-## Built as a CSE 598 (ASU, Fall 2026) team project with Pranav Manjunath Bhat and Anushka Priya ([original repo](https://github.com/prgit21/disml-cse-598)).
-- My work: agent loop and LLM clients, tool executor, LLM-judge and Llama Guard baselines, E1/E4/E5 experiments, scripted worst-case agent, ToolEmu dataset.
-- Work after Nov 21, 2026 is my own extension.
