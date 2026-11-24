@@ -375,3 +375,7 @@ wrote the scenarios. Both probably push agreement up.
 - **Reproducibility.** Each log line records `input_sha256`, which is a hash of canonical JSON, and `policy_sha256`, which hashes every `.rego` file plus `config/data.json`. The determinism check refuses to run if the policies have changed since the log was written.
 - **OPA policy check.** OPA runs with `--watch`. Before using OPA, `replay` and `determinism` check that OPA has the same policies and data as the files on disk, and stop if they don't. This keeps `policy_sha256` in the log accurate.
 - **No non-deterministic built-ins.** A pytest test fails if any `.rego` file uses `http.send`, `time.*`, `rand.*`, `uuid.*`, `net.*` or `opa.runtime`.
+
+## Built as a CSE 598 (ASU, Fall 2026) team project with Pranav Manjunath Bhat and Anushka Priya ([original repo](https://github.com/prgit21/disml-cse-598)).
+- My work: agent loop and LLM clients, tool executor, LLM-judge and Llama Guard baselines, E1/E4/E5 experiments, scripted worst-case agent, ToolEmu dataset.
+- Work after Nov 21, 2026 is my own extension.
