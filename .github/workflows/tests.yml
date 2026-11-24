@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e '.[dev]'
+
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 1.21.4
+
+      - name: Rego unit tests
+        run: opa test policies -v
+
+      - name: Start OPA server
+        run: |
+          opa run --server --addr :8181 policies > opa.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8181/health && exit 0
+            sleep 1
+          done
+          cat opa.log; exit 1
+
+      - name: Python tests (including OPA integration)
+        run: pytest -q
